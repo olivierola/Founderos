@@ -8,6 +8,8 @@ import { startInstallationSync } from "./shared/installation.ts";
 import { startPlatform } from "./platform/platform.ts";
 import { startHarness, stopHarness } from "./harness/host.ts";
 import { agentSupport, startRuntime, stopRuntime } from "./harness/runtime.ts";
+import { installMachineProvisioner } from "./edge/_shared/team-machine.ts";
+import { dockerMachineProvisioner } from "./platform/machine-provisioner.ts";
 
 // Le code porté lance des fetch « fire and forget » sans .catch. Sous Deno, un
 // rejet non géré tuait l'isolat d'UNE requête ; sous Node il arrêterait tout le
@@ -25,6 +27,11 @@ const platform = env.platform
     serviceKey: env.supabaseServiceRoleKey,
   })
   : null;
+
+// Les machines d'équipe créées à la demande (0311) : le Docker de l'hôte, en
+// mode auto-hébergé seulement (MACHINE_PROVISIONER=0 pour s'en passer).
+const machineProvisioning = !!platform && process.env.MACHINE_PROVISIONER !== "0";
+if (machineProvisioning) installMachineProvisioner(dockerMachineProvisioner());
 
 // Le harnais OpenCode (PLATFORM=self et HARNESS_OPENCODE=1) : démarré avant
 // l'écoute, il reprend aussitôt les sessions qu'un arrêt a laissées en cours.
@@ -56,6 +63,13 @@ const server = createServer(undefined, { platform }).listen(env.port, () => {
   // Réglages de l'installation (G4) : lus au démarrage, puis chaque minute.
   // Après l'écoute : en mode self, ils passent par ce serveur même.
   startInstallationSync(createServiceClient());
+  // Une création de machine coupée par un arrêt ne reprendra pas : on le dit.
+  if (machineProvisioning) {
+    createServiceClient().from("machines")
+      .update({ provision_state: "failed", last_error: "création interrompue par un redémarrage du backend : supprimez-la et recréez-la" })
+      .eq("provision_state", "creating")
+      .then(({ error }) => { if (error) console.error("[machines] reprise :", error.message); });
+  }
   // En-têtes MCP déposés en clair par la migration 0280 (la base ne connaît pas
   // la clé) : chiffrés dès le démarrage. Au mieux ; la première lecture le fait aussi.
   sealPendingMcpHeaders(createServiceClient())

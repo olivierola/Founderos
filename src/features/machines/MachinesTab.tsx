@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   PlusIcon, DesktopTowerIcon, ArrowsClockwiseIcon, PulseIcon, FolderOpenIcon,
-  SlidersHorizontalIcon, WarningCircleIcon, CircleNotchIcon as Loader2,
+  SlidersHorizontalIcon, CircleNotchIcon as Loader2,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,13 +90,6 @@ export function MachinesTab({ dashboardId, base, sub }: { dashboardId: string; b
         )}
       </header>
 
-      {fleet && !fleet.platform.token && (
-        <p className="mb-5 flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-[13px] text-amber-700 dark:text-amber-400">
-          <WarningCircleIcon className="mt-0.5 h-4 w-4 shrink-0" />
-          Le jeton des machines (TEAM_MACHINE_TOKEN) n'est pas posé côté plateforme : seules les machines qui ont leur propre jeton répondront.
-        </p>
-      )}
-
       {isLoading ? (
         <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
       ) : error ? (
@@ -117,7 +110,8 @@ export function MachinesTab({ dashboardId, base, sub }: { dashboardId: string; b
         <MachineConfig key={selected.id} machine={selected} dashboardId={dashboardId} onDeleted={() => navigate(`${base}/machines`)} />
       )}
 
-      <NewMachineDialog open={creating} onOpenChange={setCreating} dashboardId={dashboardId} hasPlatformMachine={machines.some((m) => !m.url)}
+      <NewMachineDialog open={creating} onOpenChange={setCreating} dashboardId={dashboardId}
+        provisioner={fleet?.provisioner}
         onCreated={(id) => open("overview", id)} />
     </div>
   );
@@ -188,6 +182,7 @@ function MachineCard({ machine: m, fleet, dashboardId, onOpen }: {
   const here = fleet.assignments.filter((a) => a.machine_id === m.id && a.status === "active");
   const teams = here.filter((a) => a.scope === "team").length;
   const solo = here.filter((a) => a.scope === "agent").length;
+  const creatingNow = m.provision_state === "creating";
 
   const probe = async () => {
     setProbing(true);
@@ -229,9 +224,16 @@ function MachineCard({ machine: m, fleet, dashboardId, onOpen }: {
       </div>
 
       <p className="mt-3 line-clamp-2 min-h-[2.5em] text-[13px] leading-relaxed text-muted-foreground">
-        {m.description || (m.url ? m.url : "La machine de la plateforme, jointe par son adresse configurée.")}
+        {m.description || (m.managed_by
+          ? "Un conteneur créé par la plateforme sur ce poste."
+          : m.url ? m.url : "La machine de la plateforme, jointe par son adresse configurée.")}
       </p>
 
+      {creatingNow ? (
+        <p className="mt-3 flex items-center gap-2 rounded-md bg-muted/60 px-2.5 py-2 text-[12.5px] text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Préparation du conteneur. La première fois, l'image se construit : quelques minutes.
+        </p>
+      ) : (<>
       <div className="mt-3 grid grid-cols-3 gap-3">
         <Meter label="CPU" value={info.load ? `${info.load[0]} / ${info.cpus ?? "?"}` : undefined} used={info.load?.[0]} total={info.cpus} />
         <Meter label="Mémoire" used={info.mem ? info.mem.total_kb - info.mem.free_kb : undefined} total={info.mem?.total_kb} />
@@ -245,6 +247,7 @@ function MachineCard({ machine: m, fleet, dashboardId, onOpen }: {
         {info.browser && <span>navigateur</span>}
         {info.uptime_s != null && <span>allumée depuis {formatAge(info.uptime_s)}</span>}
       </div>
+      </>)}
 
       {m.last_error && (
         <p className="mt-3 line-clamp-2 rounded-md bg-red-500/10 px-2.5 py-1.5 text-[12px] text-red-700 dark:text-red-400" title={m.last_error}>{m.last_error}</p>
@@ -261,7 +264,7 @@ function MachineCard({ machine: m, fleet, dashboardId, onOpen }: {
           <SlidersHorizontalIcon className="h-3.5 w-3.5" /> Configurer
         </Button>
         <span className="flex-1" />
-        <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[12.5px] text-muted-foreground" onClick={probe} disabled={probing}
+        <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[12.5px] text-muted-foreground" onClick={probe} disabled={probing || creatingNow}
           title={m.last_seen_at ? `Vue ${formatRelative(m.last_seen_at)}` : "Jamais jointe"}>
           {probing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowsClockwiseIcon className="h-3.5 w-3.5" />} Tester
         </Button>
@@ -270,12 +273,14 @@ function MachineCard({ machine: m, fleet, dashboardId, onOpen }: {
   );
 }
 
-function NewMachineDialog({ open, onOpenChange, dashboardId, hasPlatformMachine, onCreated }: {
-  open: boolean; onOpenChange: (v: boolean) => void; dashboardId: string; hasPlatformMachine: boolean; onCreated: (id: string) => void;
+function NewMachineDialog({ open, onOpenChange, dashboardId, provisioner, onCreated }: {
+  open: boolean; onOpenChange: (v: boolean) => void; dashboardId: string;
+  provisioner?: { available: boolean; reason?: string }; onCreated: (id: string) => void;
 }) {
+  const canCreate = !!provisioner?.available;
   const toast = useToast();
   const refresh = useRefreshFleet(dashboardId);
-  const [where, setWhere] = useState<"platform" | "url">(hasPlatformMachine ? "url" : "platform");
+  const [where, setWhere] = useState<"create" | "url">(canCreate ? "create" : "url");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [kind, setKind] = useState<MachineKind>("docker");
@@ -285,18 +290,33 @@ function NewMachineDialog({ open, onOpenChange, dashboardId, hasPlatformMachine,
 
   useEffect(() => {
     if (!open) return;
-    setWhere(hasPlatformMachine ? "url" : "platform");
-    setName(""); setDescription(""); setUrl(""); setToken(""); setKind(hasPlatformMachine ? "vm" : "docker");
-  }, [open, hasPlatformMachine]);
+    setWhere(canCreate ? "create" : "url");
+    setName(""); setDescription(""); setUrl(""); setToken(""); setKind("vm");
+  }, [open, canCreate]);
 
   const submit = async () => {
     setSaving(true);
+    if (where === "create") {
+      try {
+        const r = await fleetApi.provision(dashboardId, {
+          name: name.trim() || "Nouvelle machine", description: description.trim() || undefined,
+        });
+        toast.success("Création lancée", "La machine apparaît dans le parc et sera prête dans une minute.");
+        await refresh();
+        onOpenChange(false);
+        onCreated(r.machine.id);
+      } catch (e) {
+        toast.error("Création impossible", e instanceof Error ? e.message : String(e));
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
     try {
       const r = await fleetApi.create(dashboardId, {
-        name: name.trim() || (where === "platform" ? "Machine de la plateforme" : "Nouvelle machine"),
+        name: name.trim() || "Nouvelle machine",
         description: description.trim() || undefined, kind,
-        url: where === "url" ? url.trim() : undefined,
-        token: where === "url" && token.trim() ? token.trim() : undefined,
+        url: url.trim(), token: token.trim(),
       });
       if (r.probe?.reachable) toast.success("Machine ajoutée", "Elle répond.");
       else toast.info("Machine ajoutée", r.probe?.error ? `Pas encore joignable : ${r.probe.error}` : undefined);
@@ -320,12 +340,16 @@ function NewMachineDialog({ open, onOpenChange, dashboardId, hasPlatformMachine,
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-2">
             {([
-              ["platform", "Machine de la plateforme", "Celle que l'opérateur a branchée (TEAM_MACHINE_URL)."],
-              ["url", "Une autre adresse", "Votre conteneur ou votre VM, joignable en HTTPS."],
+              ["create", "Créer une machine", canCreate ? "Un nouveau conteneur, lancé pour vous sur ce poste." : (provisioner?.reason ?? "Indisponible ici.")],
+              ["url", "Brancher une machine", "Un superviseur team-machine qui tourne déjà : son adresse et son jeton."],
             ] as const).map(([k, label, hint]) => (
               <button
-                key={k} type="button" onClick={() => { setWhere(k); if (k === "platform") setKind("docker"); }}
-                className={cn("rounded-lg border p-3 text-left transition-colors", where === k ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50")}
+                key={k} type="button" disabled={k === "create" && !canCreate}
+                onClick={() => setWhere(k)}
+                className={cn(
+                  "rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                  where === k ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50",
+                )}
               >
                 <div className="text-[13px] font-medium">{label}</div>
                 <div className="mt-0.5 text-[12px] text-muted-foreground">{hint}</div>
@@ -334,12 +358,13 @@ function NewMachineDialog({ open, onOpenChange, dashboardId, hasPlatformMachine,
           </div>
           <label className="block">
             <span className="text-[12px] font-medium text-muted-foreground">Nom</span>
-            <Input className="mt-1" value={name} onChange={(e) => setName(e.target.value)} placeholder={where === "platform" ? "ex. Docker local" : "ex. VM de calcul"} />
+            <Input className="mt-1" value={name} onChange={(e) => setName(e.target.value)} placeholder="ex. VM de calcul" />
           </label>
           <label className="block">
             <span className="text-[12px] font-medium text-muted-foreground">Description</span>
             <Textarea className="mt-1" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="À quoi elle sert, ce qu'elle a d'installé" />
           </label>
+          {where !== "create" && (
           <div>
             <span className="text-[12px] font-medium text-muted-foreground">Type</span>
             <div className="mt-1 flex flex-wrap gap-1.5">
@@ -355,6 +380,7 @@ function NewMachineDialog({ open, onOpenChange, dashboardId, hasPlatformMachine,
               })}
             </div>
           </div>
+          )}
           {where === "url" && (
             <>
               <label className="block">
@@ -363,7 +389,7 @@ function NewMachineDialog({ open, onOpenChange, dashboardId, hasPlatformMachine,
               </label>
               <label className="block">
                 <span className="text-[12px] font-medium text-muted-foreground">Jeton de la machine (MACHINE_TOKEN)</span>
-                <Input className="mt-1 font-mono text-[13px]" type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Vide : celui de la plateforme" />
+                <Input className="mt-1 font-mono text-[13px]" type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder="32 caractères au moins" />
                 <span className="mt-1 block text-[11.5px] text-muted-foreground">Chiffré, jamais réaffiché ni donné aux agents.</span>
               </label>
             </>
@@ -371,8 +397,8 @@ function NewMachineDialog({ open, onOpenChange, dashboardId, hasPlatformMachine,
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Annuler</Button>
-          <Button onClick={submit} disabled={saving || (where === "url" && !url.trim())}>
-            {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Ajouter
+          <Button onClick={submit} disabled={saving || (where === "url" && (!url.trim() || token.trim().length < 32))}>
+            {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} {where === "create" ? "Créer" : "Ajouter"}
           </Button>
         </DialogFooter>
       </DialogContent>

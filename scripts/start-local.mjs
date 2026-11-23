@@ -9,7 +9,6 @@
 //   npm run dev:local -- --backend-only     sans le front
 //   npm run dev:local -- --setup-only       préparer sans démarrer
 //   npm run dev:local -- --skip-install     ne pas vérifier les dépendances
-//   npm run dev:local -- --team-machine     (re)lancer aussi le conteneur de la machine d'équipe (Docker)
 //
 // Étapes : Node ≥ 22 ; dépendances ; backend/.env.self (créé depuis l'exemple,
 // JWT_SECRET généré) ; migrations ; import éventuel ; .env.local du front
@@ -76,6 +75,14 @@ function setEnv(file, values, header) {
   writeFileSync(file, text);
 }
 
+/** Retire des variables d'un fichier .env (les lignes actives seulement). */
+function unsetEnv(file, keys) {
+  const text = readFileSync(file, "utf8");
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const out = text.split(/\r?\n/).filter((l) => !keys.some((k) => new RegExp(`^[ 	]*${k}[ 	]*=`).test(l)));
+  writeFileSync(file, out.join(eol));
+}
+
 // ── 1. Node ──────────────────────────────────────────────────────────────────
 
 step("Vérification de Node");
@@ -111,6 +118,12 @@ if (!env.JWT_SECRET || env.JWT_SECRET.length < 32) {
   fixes.JWT_SECRET = randomBytes(32).toString("hex");
   console.log("  JWT_SECRET généré");
 }
+if (!env.CREDENTIAL_ENCRYPTION_KEY) {
+  // Chiffre les secrets stockés (identités des agents sur les machines,
+  // connecteurs, en-têtes MCP). Le garder : sans lui, ils sont illisibles.
+  fixes.CREDENTIAL_ENCRYPTION_KEY = randomBytes(32).toString("base64");
+  console.log("  CREDENTIAL_ENCRYPTION_KEY générée");
+}
 if (!env.DATABASE_URL) fixes.DATABASE_URL = "pglite://./.data/pg";
 if (!env.FUNCTIONS_URL) fixes.FUNCTIONS_URL = `http://localhost:${env.PORT || 8787}`;
 const wantHarness = has("--no-harness") ? "0" : has("--harness") || env.HARNESS_OPENCODE === undefined ? "1" : env.HARNESS_OPENCODE;
@@ -120,41 +133,22 @@ env = parseEnv(readFileSync(ENV_SELF, "utf8"));
 const backendUrl = (env.FUNCTIONS_URL || `http://localhost:${env.PORT || 8787}`).replace(/\/$/, "");
 console.log(`  base : ${env.DATABASE_URL}`);
 console.log(`  harnais OpenCode : ${env.HARNESS_OPENCODE === "1" ? "activé" : "désactivé"}`);
-// ── La machine des équipes d'agents (team-machine/compose.yaml, :8091) ──
-// Le backend et le conteneur partagent un jeton : celui de team-machine/secret
-// (ignoré par git). Sans fichier, un jeton est créé ; le conteneur doit alors
-// être (re)lancé avec lui : --team-machine le fait.
-const MACHINE_SECRET = path.join(ROOT, "team-machine", "secret");
-const machineFixes = {};
-let machineToken = env.TEAM_MACHINE_TOKEN ?? "";
-if (machineToken.length < 32) {
-  if (existsSync(MACHINE_SECRET)) machineToken = readFileSync(MACHINE_SECRET, "utf8").trim();
-  if (machineToken.length < 32) {
-    machineToken = randomBytes(36).toString("base64url");
-    writeFileSync(MACHINE_SECRET, machineToken);
-    console.log("  jeton de la machine d'équipe créé (team-machine/secret)");
-  }
-  machineFixes.TEAM_MACHINE_TOKEN = machineToken;
-}
-if (!env.TEAM_MACHINE_URL) machineFixes.TEAM_MACHINE_URL = "http://localhost:8091";
-if (Object.keys(machineFixes).length) {
-  setEnv(ENV_SELF, machineFixes);
+// ── Les machines des équipes d'agents ──
+// Elles se créent à la demande depuis l'onglet Machines (un conteneur par
+// machine, avec son adresse et son jeton) : plus de machine partagée posée par
+// TEAM_MACHINE_URL / TEAM_MACHINE_TOKEN. On retire ces deux variables si un
+// ancien .env.self les porte encore, et on dit si Docker répond.
+const stale = ["TEAM_MACHINE_URL", "TEAM_MACHINE_TOKEN"].filter((k) => k in env);
+if (stale.length) {
+  unsetEnv(ENV_SELF, stale);
   env = parseEnv(readFileSync(ENV_SELF, "utf8"));
+  console.log(`  retiré de .env.self : ${stale.join(", ")} (les machines se créent dans l'onglet Machines)`);
 }
-const machineUrl = env.TEAM_MACHINE_URL.replace(/\/$/, "");
-const machineUp = async () => {
-  try { return (await fetch(`${machineUrl}/health`, { signal: AbortSignal.timeout(3000) })).ok; } catch { return false; }
-};
-if (has("--team-machine")) {
-  console.log("  machine d'équipe : docker compose up (team-machine/compose.yaml)…");
-  const r = spawnSync("docker", ["compose", "-f", path.join(ROOT, "team-machine", "compose.yaml"), "up", "-d", "--build"],
-    { stdio: "inherit", env: { ...process.env, TEAM_MACHINE_TOKEN: machineToken } });
-  if (r.status !== 0) console.log("  ⚠ docker compose a échoué : Docker Desktop tourne-t-il ?");
-}
-if (await machineUp()) {
-  console.log(`  machine d'équipe : ${machineUrl} répond`);
+const docker = spawnSync("docker", ["version", "--format", "{{.Server.Version}}"], { encoding: "utf8", shell: WIN });
+if (docker.status === 0 && docker.stdout.trim()) {
+  console.log(`  machines à la demande : Docker ${docker.stdout.trim()} répond`);
 } else {
-  console.log(`  ⚠ machine d'équipe injoignable sur ${machineUrl}. Pour la lancer : npm run dev:local -- --team-machine`);
+  console.log("  ⚠ Docker ne répond pas : l'onglet Machines ne pourra pas créer de machine (lancez Docker Desktop).");
 }
 
 const LLM_KEYS = ["OPENROUTER_API_KEY", "LLM_API_KEY", "AZURE_OPENAI_API_KEY", "RUNWARE_API_KEY", "DEEPSEEK_API_KEY", "GROQ_API_KEY"];

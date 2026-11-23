@@ -58,20 +58,15 @@ Les options passent après `--` : `npm run dev:local -- --import "postgresql://p
    update public.internal_agents set harness = 'opencode' where id = '<agent>';
    ```
 
-## La machine des équipes d'agents
+## Les machines des équipes d'agents
 
-Les équipes d'agents travaillent sur une machine Linux partagée : le conteneur `team-machine/compose.yaml`, sur le port 8091 (voir [team-machine.md](team-machine.md)). Le backend et le conteneur partagent un jeton.
+Les équipes d'agents travaillent sur des machines Linux (voir [team-machine.md](team-machine.md)). En local, elles se **créent à la demande** : onglet **Machines** d'un service, **Ajouter une machine**, puis **Créer une machine**. Le backend lance alors un conteneur dédié sur le Docker de ton poste, avec son port (8100 à 8199) et son propre jeton, et la machine apparaît dans le parc dès qu'elle répond.
 
-Le script s'en occupe :
-- il reprend le jeton de `team-machine/secret`, un fichier ignoré par git, ou en crée un ;
-- il pose `TEAM_MACHINE_TOKEN` et `TEAM_MACHINE_URL=http://localhost:8091` dans `backend/.env.self` ;
-- il vérifie que la machine répond.
+- Il faut **Docker Desktop** démarré. Le script dit au démarrage si Docker répond.
+- Aucune variable à poser : `TEAM_MACHINE_URL` et `TEAM_MACHINE_TOKEN` ne servent plus. Le script les retire de `backend/.env.self` s'ils y sont encore.
+- Une machine qui tourne déjà ailleurs se branche avec **Brancher une machine** : son adresse et son jeton (32 caractères au moins). En auto-hébergé, une adresse du réseau interne est acceptée.
 
-Si le conteneur ne tourne pas, `npm run dev:local -- --team-machine` le (re)lance avec ce jeton. Il faut Docker Desktop.
-
-Deux points d'attention :
-- **Après un import du cloud.** `app_config.team_machine_url` peut contenir l'adresse ngrok du cloud, et elle l'emporte sur `TEAM_MACHINE_URL`. Si la machine est injoignable, vide cette ligne de la base locale.
-- **Après un changement de `.env.self`.** Le backend ne lit ce fichier qu'au démarrage : redémarre-le.
+Après un changement de `.env.self`, redémarre le backend : il ne lit ce fichier qu'au démarrage.
 
 ## Les mêmes étapes, à la main
 

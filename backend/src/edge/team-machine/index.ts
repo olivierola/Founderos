@@ -25,7 +25,7 @@ import { requireWorkspaceMember, type WorkspaceRole } from "../_shared/authz.ts"
 import { assertSafeUrl } from "../_shared/ssrf.ts";
 import {
   archiveFolder, callMachine, changeFolderMembers, createFolder, enableTeamMachine, loadFolder, loadTeamMachine,
-  configFor, MachineError, machineConfig, pauseTeamMachine, readTeams, resetAgentSecret, rotateFolderSecret, type MachineRow,
+  configFor, fleetConfig, MachineError, pauseTeamMachine, readTeams, resetAgentSecret, rotateFolderSecret, type MachineRow,
 } from "../_shared/team-machine.ts";
 
 type Body = Record<string, unknown> & { action?: string };
@@ -62,6 +62,7 @@ export default defineHandler(async (req) => {
         const row = await enableTeamMachine(admin, {
           dashboardId: b.id, workspaceId: b.workspace_id, team, userId: auth.userId,
           allowSystemPackages: body.allow_system_packages === true,
+          machineId: typeof body.machine_id === "string" && body.machine_id ? body.machine_id : null,
         });
         return jsonResponse({ ok: true, machine: publicMachine(row) });
       }
@@ -173,7 +174,15 @@ async function status(admin: any, board: { id: string; settings: unknown }) {
   // Depuis 0304 chaque équipe peut être sur sa machine : on interroge chacune
   // pour les seules équipes qu'elle porte.
   let live: { reachable: boolean; error?: string; teams?: Array<Record<string, unknown>>; apt?: boolean } = { reachable: false };
-  const cfg = await machineConfig(admin).catch(() => null);
+  // Une machine du parc de ce tableau qui répondrait (il n'y a plus de
+  // machine de la plateforme) : de quoi dire si l'onglet est « branché ».
+  const { data: fleet } = await admin.from("machines").select("id, url, managed_by")
+    .eq("dashboard_id", board.id).eq("status", "active").limit(20);
+  let cfg: Awaited<ReturnType<typeof fleetConfig>> = null;
+  for (const m of (fleet ?? []) as Array<{ id: string; url: string | null; managed_by: "docker" | null }>) {
+    cfg = await fleetConfig(admin, m).catch(() => null);
+    if (cfg) break;
+  }
   if (teamIds.length) {
     const groups = new Map<string, { cfg: Awaited<ReturnType<typeof configFor>>; teams: string[] }>();
     for (const r of rows) {

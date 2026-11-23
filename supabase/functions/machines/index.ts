@@ -4,8 +4,13 @@
 //
 //   { action: "list",     dashboard_id }                                  lecteur
 //   { action: "create",   dashboard_id, name, description?, kind?, url?, token?, allow_system_packages? }   admin
+//   { action: "create",   dashboard_id, name, description?, provision: true, allow_system_packages? }     admin
+//                         → la plateforme CRÉE la machine (0311) : conteneur, port, jeton ; réponse immédiate,
+//                           provision_state passe de creating à ready (ou failed) en arrière-plan
 //   { action: "update",   machine_id, name?, description?, kind?, url?, token?, allow_system_packages?, status? } admin
-//   { action: "delete",   machine_id }                                    admin
+//   { action: "delete",   machine_id, destroy? }                          admin
+//                         → destroy (machine créée à la demande) : le conteneur part avec ; destroy: "all"
+//                           emporte aussi ses volumes (les dossiers des équipes)
 //   { action: "probe",    machine_id }                                    lecteur
 //   { action: "activity", machine_id, since? }                            membre
 //   { action: "browser_view", machine_id, team_id, agent_id }             membre
@@ -28,7 +33,8 @@ import { requireWorkspaceMember, type WorkspaceRole } from "../_shared/authz.ts"
 import { assertSafeUrl } from "../_shared/ssrf.ts";
 import {
   agentCall, assignMachine, audit, buildAgentMachine, callMachine, configFor, fleetConfig, hasMachineToken, loadFleetMachine,
-  loadTeamMachine, MachineError, readTeams, setMachineToken, type FleetMachine, type MachineRow,
+  loadTeamMachine, MachineError, machineProvisioner, newSecret, readMachineToken, readTeams, setMachineToken,
+  type FleetMachine, type MachineRow,
 } from "../_shared/team-machine.ts";
 
 type Body = Record<string, unknown> & { action?: string };
@@ -61,6 +67,12 @@ Deno.serve(async (req) => {
         if (!auth.ok) return auth.response;
         const name = str(body.name, 80);
         if (!name) return jsonResponse({ ok: false, error: "donnez un nom à la machine" }, { status: 400 });
+        if (body.provision === true) {
+          return jsonResponse(await provisionMachine(admin, board, {
+            name, description: str(body.description, 400) || null,
+            allowApt: body.allow_system_packages === true, userId: auth.userId,
+          }));
+        }
         const url = await checkedUrl(body.url);
         if (url instanceof Response) return url;
         const kind = KINDS.includes(body.kind as typeof KINDS[number]) ? body.kind as string : (url ? "vm" : "docker");
@@ -100,6 +112,11 @@ Deno.serve(async (req) => {
           if ((live ?? []).length) {
             return jsonResponse({ ok: false, error: "retirez d'abord cette machine des équipes et des agents qui l'utilisent" }, { status: 409 });
           }
+          if (m.managed_by && m.managed_ref && (body.destroy === true || body.destroy === "all")) {
+            const p = machineProvisioner();
+            if (!p) return jsonResponse({ ok: false, error: "le conteneur ne peut être supprimé que depuis la plateforme auto-hébergée qui l'a créé" }, { status: 501 });
+            await p.destroy({ ref: m.managed_ref, volumes: body.destroy === "all" });
+          }
           await setMachineToken(admin, m.id, null);
           const { error } = await admin.from("machines").delete().eq("id", m.id);
           if (error) throw new Error(error.message);
@@ -118,6 +135,9 @@ Deno.serve(async (req) => {
         const machine = machineId ? await loadFleetMachine(admin, machineId) : null;
         if (machineId && !machine) return jsonResponse({ ok: false, error: "machine introuvable" }, { status: 404 });
         if (machine && machine.status !== "active") return jsonResponse({ ok: false, error: "cette machine est en pause" }, { status: 409 });
+        if (machine?.managed_by && machine.provision_state !== "ready") {
+          return jsonResponse({ ok: false, error: machine.provision_state === "failed" ? "la création de cette machine a échoué" : "cette machine est encore en création" }, { status: 409 });
+        }
         let target: Parameters<typeof assignMachine>[1]["target"];
         if (t.type === "team") {
           const team = readTeams(board.settings).find((x) => x.id === t.id);
@@ -217,8 +237,49 @@ async function checkedUrl(raw: unknown): Promise<string | null | Response> {
   return url;
 }
 
+/** La création à la demande est-elle possible ici, et sinon pourquoi. */
+async function provisionerStatus(): Promise<{ available: boolean; reason?: string }> {
+  const p = machineProvisioner();
+  if (!p) return { available: false, reason: "disponible avec la plateforme auto-hébergée (Docker de l'hôte)" };
+  const c = await p.check().catch((e) => ({ ok: false as const, reason: e instanceof Error ? e.message : String(e) }));
+  return c.ok ? { available: true } : { available: false, reason: c.reason };
+}
+
+/**
+ * Créer une machine (0311) : la ligne d'abord, en « creating », puis le
+ * conteneur en arrière-plan. La réponse n'attend pas Docker (une première
+ * image se construit en minutes) : l'onglet suit provision_state.
+ */
+async function provisionMachine(admin: Admin, board: Board, input: { name: string; description: string | null; allowApt: boolean; userId: string | null }) {
+  const p = machineProvisioner();
+  if (!p) throw new MachineError(501, "no_provisioner", "la création à la demande n'est disponible qu'avec la plateforme auto-hébergée (Docker de l'hôte)");
+  const ready = await p.check();
+  if (!ready.ok) throw new MachineError(503, "provisioner_unavailable", ready.reason);
+  const { data, error } = await admin.from("machines").insert({
+    workspace_id: board.workspace_id, dashboard_id: board.id, name: input.name, description: input.description,
+    kind: "docker", url: null, allow_system_packages: input.allowApt, created_by: input.userId,
+    managed_by: "docker", provision_state: "creating",
+  }).select("*").single();
+  if (error) throw new Error(error.message);
+  const m = data as FleetMachine;
+  const token = newSecret();
+  await setMachineToken(admin, m.id, token);
+  void (async () => {
+    try {
+      const { ref, url } = await p.create({ machineId: m.id, token, allowApt: input.allowApt });
+      await admin.from("machines").update({ managed_ref: ref, url, provision_state: "ready", last_error: null, updated_at: new Date().toISOString() }).eq("id", m.id);
+      await probeMachine(admin, { ...m, managed_ref: ref, url, provision_state: "ready" });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await admin.from("machines").update({ provision_state: "failed", last_error: `création impossible : ${msg}`.slice(0, 900) }).eq("id", m.id);
+    }
+  })();
+  return { ok: true, machine: { ...m, has_token: true }, probe: { reachable: false, error: "en cours de création" } };
+}
+
 /** Joindre la machine : /health d'abord (sans signature), puis machine.info. */
 async function probeMachine(admin: Admin, m: FleetMachine) {
+  if (m.provision_state === "creating") return { reachable: false, error: "en cours de création" };
   const cfg = await fleetConfig(admin, m).catch(() => null);
   if (!cfg) {
     const error = m.url ? "aucun jeton : posez celui de la machine, ou TEAM_MACHINE_TOKEN côté plateforme"
@@ -276,6 +337,7 @@ async function listFleet(admin: Admin, board: Board) {
         teams: [...teamAgents.entries()].filter(([, ids]) => ids.includes(a.id)).map(([id]) => id),
       })),
     platform: { token: (Deno.env.get("TEAM_MACHINE_TOKEN") ?? "").length >= 32 },
+    provisioner: await provisionerStatus(),
   };
 }
 
@@ -294,6 +356,16 @@ async function updateMachine(admin: Admin, m: FleetMachine, body: Body, userId: 
     patch.url = url;
   }
   if (typeof body.allow_system_packages === "boolean") patch.allow_system_packages = body.allow_system_packages;
+  // L'adresse d'une machine créée à la demande appartient à la plateforme.
+  if (m.managed_by && "url" in patch) delete patch.url;
+  // apt se règle au lancement du superviseur : une machine créée à la demande
+  // est relancée (mêmes volumes, même port, même jeton) avec le nouveau réglage.
+  if (m.managed_by && m.managed_ref && "allow_system_packages" in patch && patch.allow_system_packages !== m.allow_system_packages) {
+    const p = machineProvisioner();
+    const token = await readMachineToken(admin, m.id);
+    if (!p || !token) throw new MachineError(501, "no_provisioner", "cette machine ne peut être relancée que depuis la plateforme auto-hébergée qui l'a créée");
+    await p.reconfigure({ ref: m.managed_ref, token, allowApt: patch.allow_system_packages === true });
+  }
   const statusChange = body.status === "paused" || body.status === "active" ? body.status as "paused" | "active" : null;
   if (statusChange) patch.status = statusChange;
   if (body.token !== undefined) await setMachineToken(admin, m.id, body.token === null ? null : str(body.token, 400) || null);

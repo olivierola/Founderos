@@ -148,7 +148,7 @@ describe("sorties", () => {
     assert.equal(values.supabase.internalUrl, "http://founderos-sb-kong.founderos.svc:8000");
     assert.equal(cfg.secrets.source, "generate");
     const [backend] = k8sSecrets(cfg, generateSecrets(cfg));
-    assert.deepEqual(Object.keys(backend.stringData).sort(), ["APPROVAL_SIGNING_KEY", "CREDENTIAL_ENCRYPTION_KEY", "TEAM_MACHINE_TOKEN"], "la clé Azure vient de LLM_API_KEY, jamais du fichier");
+    assert.deepEqual(Object.keys(backend.stringData).sort(), ["APPROVAL_SIGNING_KEY", "CREDENTIAL_ENCRYPTION_KEY"], "la clé Azure vient de LLM_API_KEY, jamais du fichier");
     assert.deepEqual(values.mcp, {
       internalHosts: ["mcp.apps-int.*.interne.exemple"],
       clientCert: {

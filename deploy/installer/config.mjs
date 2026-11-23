@@ -218,7 +218,9 @@ export function helmValues(cfg) {
   };
 }
 
-const BACKEND_KEYS = ["CREDENTIAL_ENCRYPTION_KEY", "APPROVAL_SIGNING_KEY", "TEAM_MACHINE_TOKEN", "LLM_API_KEY", "OPENROUTER_API_KEY"];
+// TEAM_MACHINE_TOKEN n'y est pas : c'est le jeton du conteneur de la machine
+// (compose), que l'on branche ensuite dans l'onglet Machines ; le backend ne le lit pas.
+const BACKEND_KEYS = ["CREDENTIAL_ENCRYPTION_KEY", "APPROVAL_SIGNING_KEY", "LLM_API_KEY", "OPENROUTER_API_KEY"];
 
 /** Les Secrets attendus par le chart, quand l'installateur les génère. */
 export function k8sSecrets(cfg, s) {

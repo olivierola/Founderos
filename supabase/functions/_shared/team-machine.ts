@@ -61,6 +61,39 @@ export interface FleetMachine {
   info: Record<string, unknown>;
   last_seen_at: string | null;
   last_error: string | null;
+  /** 0311 : créée par la plateforme ('docker'), ou null si déclarée à la main. */
+  managed_by?: "docker" | null;
+  managed_ref?: string | null;
+  provision_state?: "creating" | "ready" | "failed" | null;
+}
+
+// ── Création à la demande (0311) ─────────────────────────────────────────────
+
+/**
+ * Ce qui sait créer et détruire une machine. Seul le backend auto-hébergé
+ * (Node, PLATFORM=self) en installe un — il pilote le Docker de l'hôte — sur
+ * `globalThis` au démarrage. Sous Supabase, il n'y en a pas : la création à la
+ * demande y est simplement indisponible.
+ */
+export interface MachineProvisioner {
+  /** Prêt à créer ? Sinon la raison, à montrer telle quelle. */
+  check(): Promise<{ ok: true } | { ok: false; reason: string }>;
+  /** Lance la machine et attend qu'elle réponde. Le jeton ne passe jamais par un argument de commande. */
+  create(input: { machineId: string; token: string; allowApt: boolean }): Promise<{ ref: string; url: string }>;
+  /** Relance le même conteneur avec d'autres réglages (mêmes volumes, même port, même jeton). */
+  reconfigure(input: { ref: string; token: string; allowApt: boolean }): Promise<void>;
+  /** Arrête et supprime le conteneur ; ses volumes (les dossiers des équipes) aussi si demandé. */
+  destroy(input: { ref: string; volumes: boolean }): Promise<void>;
+}
+
+const PROVISIONER_KEY = "__founderosMachineProvisioner";
+
+export function machineProvisioner(): MachineProvisioner | null {
+  return ((globalThis as Record<string, unknown>)[PROVISIONER_KEY] as MachineProvisioner | undefined) ?? null;
+}
+
+export function installMachineProvisioner(p: MachineProvisioner | null): void {
+  (globalThis as Record<string, unknown>)[PROVISIONER_KEY] = p ?? undefined;
 }
 
 const MACHINE_ROW_COLS = "team_id, dashboard_id, workspace_id, team_key, status, allow_system_packages, url, machine_path, machine_id, scope, agent_id";
@@ -206,11 +239,16 @@ export async function hmacHex(token: string, message: string): Promise<string> {
  * tunnel ngrok change d'adresse), sinon l'environnement. Le jeton ne vient que
  * de l'environnement : il ne passe jamais par la base.
  */
-export async function machineConfig(admin: SupabaseClient, override?: string | null, ownToken?: string | null): Promise<MachineConfig | null> {
+export async function machineConfig(
+  admin: SupabaseClient, override?: string | null, ownToken?: string | null, trusted = false,
+): Promise<MachineConfig | null> {
   const token = ownToken || (Deno.env.get("TEAM_MACHINE_TOKEN") ?? "");
   if (token.length < 32) return null;
   let url = override?.trim() || "";
-  if (url) {
+  if (url && trusted) {
+    // Une adresse que la plateforme a posée elle-même (machine créée à la
+    // demande, 0311) : un port local, qu'aucun humain n'a choisi.
+  } else if (url) {
     // Une URL posée sur l'équipe vient d'un humain du workspace, pas de
     // l'opérateur : elle ne doit pas servir à sonder le réseau interne.
     const verdict = await assertSafeUrl(url);
@@ -235,8 +273,15 @@ export async function loadFleetMachine(admin: SupabaseClient, id: string): Promi
 
 /** Où et comment joindre une machine du parc : son URL (ou celle de la
  *  plateforme), son jeton propre s'il en a un (sinon TEAM_MACHINE_TOKEN). */
-export async function fleetConfig(admin: SupabaseClient, m: Pick<FleetMachine, "id" | "url">): Promise<MachineConfig | null> {
+export async function fleetConfig(admin: SupabaseClient, m: Pick<FleetMachine, "id" | "url" | "managed_by">): Promise<MachineConfig | null> {
   const own = (await readSecrets(admin, "machine", [m.id])).get(m.id) ?? null;
+  if (m.managed_by) {
+    // Une machine créée à la demande n'a que SON adresse et SON jeton : sans
+    // eux (encore en création), elle n'est pas joignable — surtout pas
+    // remplacée en douce par la machine de la plateforme.
+    if (!m.url || !own) return null;
+    return machineConfig(admin, m.url, own, true);
+  }
   return machineConfig(admin, m.url, own);
 }
 
@@ -262,6 +307,11 @@ export async function setMachineToken(admin: SupabaseClient, machineId: string, 
   }
   if (token.length < 32) throw new MachineError(400, "bad_token", "le jeton d'une machine fait 32 caractères au moins");
   await storeSecret(admin, "machine", machineId, token);
+}
+
+/** Le jeton propre d'une machine, déchiffré (pour la relancer, jamais pour un modèle). */
+export async function readMachineToken(admin: SupabaseClient, machineId: string): Promise<string | null> {
+  return (await readSecrets(admin, "machine", [machineId])).get(machineId) ?? null;
 }
 
 export async function hasMachineToken(admin: SupabaseClient, machineIds: string[]): Promise<Set<string>> {

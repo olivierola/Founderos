@@ -41,6 +41,10 @@ export interface FleetMachine {
   created_at: string;
   has_token: boolean;
   assignments: number;
+  /** 0311 : créée par la plateforme (un conteneur Docker de l'hôte), sinon null. */
+  managed_by?: "docker" | null;
+  managed_ref?: string | null;
+  provision_state?: "creating" | "ready" | "failed" | null;
 }
 
 export interface Assignment {
@@ -63,7 +67,8 @@ export interface Fleet {
   assignments: Assignment[];
   teams: FleetTeam[];
   agents: FleetAgent[];
-  platform: { token: boolean };
+  /** La création à la demande : possible ici, sinon pourquoi. */
+  provisioner?: { available: boolean; reason?: string };
 }
 
 export interface Probe { reachable: boolean; error?: string; info?: MachineInfoSnapshot; latency_ms?: number; seen_at?: string }
@@ -126,6 +131,8 @@ export function useFleet(dashboardId: string) {
     queryKey: fleetKey(dashboardId),
     queryFn: () => callEdge<Fleet>("machines", { action: "list", dashboard_id: dashboardId }),
     staleTime: 15_000,
+    // Une machine en création : on suit son avancement jusqu'à ce qu'elle réponde.
+    refetchInterval: (q) => (q.state.data?.machines.some((m) => m.provision_state === "creating") ? 3000 : false),
     retry: false,
   });
 }
@@ -162,7 +169,12 @@ export const fleetApi = {
     callEdge<Res & { machine: FleetMachine; probe: Probe }>("machines", { action: "create", dashboard_id: dashboardId, ...input }),
   update: (machineId: string, patch: Partial<Omit<MachineInput, "token">> & { token?: string | null; status?: "active" | "paused" }) =>
     callEdge<Res & { machine: FleetMachine }>("machines", { action: "update", machine_id: machineId, ...patch }),
-  remove: (machineId: string) => callEdge<Res>("machines", { action: "delete", machine_id: machineId }),
+  /** destroy (machine créée à la demande) : true emporte le conteneur, "all" aussi ses volumes. */
+  remove: (machineId: string, destroy?: boolean | "all") =>
+    callEdge<Res>("machines", { action: "delete", machine_id: machineId, ...(destroy ? { destroy } : {}) }),
+  /** Faire créer une machine par la plateforme (0311). */
+  provision: (dashboardId: string, input: { name: string; description?: string; allow_system_packages?: boolean }) =>
+    callEdge<Res & { machine: FleetMachine; probe: Probe }>("machines", { action: "create", dashboard_id: dashboardId, provision: true, ...input }),
   probe: (machineId: string) => callEdge<Res & { probe: Probe }>("machines", { action: "probe", machine_id: machineId }),
   assign: (dashboardId: string, target: { type: "team" | "agent"; id: string }, machineId: string | null) =>
     callEdge<Res & { team_id: string; status: string; moved: boolean }>("machines", { action: "assign", dashboard_id: dashboardId, target, machine_id: machineId }),
@@ -207,7 +219,10 @@ export function formatAge(s: number | null | undefined): string {
 }
 
 /** En ligne si vue dans les 5 dernières minutes et sans erreur depuis. */
-export function machineHealth(m: Pick<FleetMachine, "status" | "last_seen_at" | "last_error">): "paused" | "online" | "offline" | "unknown" {
+export function machineHealth(
+  m: Pick<FleetMachine, "status" | "last_seen_at" | "last_error" | "provision_state">,
+): "creating" | "paused" | "online" | "offline" | "unknown" {
+  if (m.provision_state === "creating") return "creating";
   if (m.status === "paused") return "paused";
   if (m.last_error) return "offline";
   if (!m.last_seen_at) return "unknown";
@@ -215,6 +230,7 @@ export function machineHealth(m: Pick<FleetMachine, "status" | "last_seen_at" | 
 }
 
 export const HEALTH_META = {
+  creating: { label: "En création", dot: "bg-sky-500 animate-pulse", text: "text-sky-600 dark:text-sky-400" },
   online: { label: "En ligne", dot: "bg-emerald-500", text: "text-emerald-600 dark:text-emerald-400" },
   offline: { label: "Injoignable", dot: "bg-red-500", text: "text-red-600 dark:text-red-400" },
   unknown: { label: "À vérifier", dot: "bg-muted-foreground/50", text: "text-muted-foreground" },

@@ -5,6 +5,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ToastProvider";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { cn } from "@/lib/utils";
@@ -22,8 +24,11 @@ export function MachineConfig({ machine: m, dashboardId, onDeleted }: { machine:
   const [url, setUrl] = useState(m.url ?? "");
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const platform = !m.url;
-  const dirty = name !== m.name || description !== (m.description ?? "") || kind !== m.kind || (!platform && url !== (m.url ?? ""));
+  const [removing, setRemoving] = useState(false);
+  // Créée par la plateforme (0311) : son adresse et son jeton lui appartiennent.
+  const managed = !!m.managed_by;
+  const fixedUrl = managed;
+  const dirty = name !== m.name || description !== (m.description ?? "") || kind !== m.kind || (!fixedUrl && url !== (m.url ?? ""));
   const info = m.info ?? {};
 
   const run = async (key: string, op: () => Promise<unknown>, done?: string) => {
@@ -40,7 +45,7 @@ export function MachineConfig({ machine: m, dashboardId, onDeleted }: { machine:
   };
 
   const save = () => run("save", () => fleetApi.update(m.id, {
-    name: name.trim(), description: description.trim(), kind, ...(platform ? {} : { url: url.trim() }),
+    name: name.trim(), description: description.trim(), kind, ...(fixedUrl ? {} : { url: url.trim() }),
   }), "Machine enregistrée");
 
   const probe = () => run("probe", async () => {
@@ -62,7 +67,23 @@ export function MachineConfig({ machine: m, dashboardId, onDeleted }: { machine:
       m.status === "active" ? "Machine en pause" : "Machine relancée");
   };
 
+  const removeManaged = async (wipe: boolean) => {
+    setBusy("delete");
+    try {
+      await fleetApi.remove(m.id, wipe ? "all" : true);
+      toast.success("Machine supprimée", wipe ? "Conteneur et dossiers effacés." : "Conteneur supprimé, dossiers gardés.");
+      setRemoving(false);
+      await refresh();
+      onDeleted();
+    } catch (e) {
+      toast.error("Suppression impossible", e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const remove = async () => {
+    if (managed) { setRemoving(true); return; }
     const ok = await confirm({
       title: `Supprimer « ${m.name} » ?`,
       description: "La machine sort du parc. Ses fichiers restent sur le poste lui-même ; rien n'y est effacé.",
@@ -105,8 +126,11 @@ export function MachineConfig({ machine: m, dashboardId, onDeleted }: { machine:
             </div>
           </Field>
           <Field label="Adresse">
-            {platform ? (
-              <p className="text-[13px] text-muted-foreground">La machine de la plateforme : son adresse est celle que l'opérateur a configurée (app_config.team_machine_url, mise à jour par le script d'infrastructure).</p>
+            {managed ? (
+              <p className="text-[13px] text-muted-foreground">
+                Créée par la plateforme : conteneur <span className="font-mono text-foreground">{m.managed_ref ?? "en préparation"}</span>
+                {m.url && <>, joint sur <span className="font-mono text-foreground">{m.url}</span></>}.
+              </p>
             ) : (
               <Input className="font-mono text-[13px]" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://ma-machine.exemple.com" />
             )}
@@ -122,9 +146,9 @@ export function MachineConfig({ machine: m, dashboardId, onDeleted }: { machine:
           <div className="flex items-start gap-3">
             <KeyIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-medium">{m.has_token ? "Jeton propre à cette machine" : "Jeton de la plateforme (TEAM_MACHINE_TOKEN)"}</div>
+              <div className="text-[13px] font-medium">{managed ? "Jeton généré à la création" : m.has_token ? "Jeton propre à cette machine" : "Aucun jeton : la machine ne répondra pas"}</div>
               <p className="text-[12px] text-muted-foreground">La clé qui signe chaque appel. Chiffrée, jamais réaffichée, jamais donnée aux agents.</p>
-              <div className="mt-2 flex gap-2">
+              {!managed && <div className="mt-2 flex gap-2">
                 <Input type="password" autoComplete="off" className="h-8 font-mono text-[12.5px]" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Nouveau jeton (32 caractères au moins)" />
                 <Button size="sm" variant="outline" disabled={token.trim().length < 32 || busy === "token"}
                   onClick={() => run("token", async () => { await fleetApi.update(m.id, { token: token.trim() }); setToken(""); }, "Jeton enregistré")}>Poser</Button>
@@ -132,16 +156,18 @@ export function MachineConfig({ machine: m, dashboardId, onDeleted }: { machine:
                   <Button size="sm" variant="ghost" disabled={busy === "token"}
                     onClick={() => run("token", () => fleetApi.update(m.id, { token: null }), "Jeton retiré")}>Retirer</Button>
                 )}
-              </div>
+              </div>}
             </div>
           </div>
           <SwitchRow
             icon={PackageIcon}
             label="Paquets système"
-            desc="Les agents peuvent demander des paquets apt, installés pour toute la machine. Il faut aussi MACHINE_ALLOW_APT=1 sur le poste."
+            desc={managed
+              ? "Les agents peuvent demander des paquets apt, installés pour toute la machine. Changer ce réglage relance le conteneur ; les fichiers restent."
+              : "Les agents peuvent demander des paquets apt, installés pour toute la machine. Il faut aussi MACHINE_ALLOW_APT=1 sur le poste."}
             checked={m.allow_system_packages}
             disabled={busy === "apt"}
-            onChange={(v) => run("apt", () => fleetApi.update(m.id, { allow_system_packages: v }))}
+            onChange={(v) => run("apt", () => fleetApi.update(m.id, { allow_system_packages: v }), managed ? "Machine relancée" : undefined)}
           />
         </Card>
       </div>
@@ -188,7 +214,42 @@ export function MachineConfig({ machine: m, dashboardId, onDeleted }: { machine:
           </div>
         </Card>
       </div>
+      {managed && (
+        <RemoveManagedDialog
+          open={removing} onOpenChange={setRemoving} name={m.name} busy={busy === "delete"} onConfirm={removeManaged}
+        />
+      )}
     </div>
+  );
+}
+
+/** Supprimer une machine créée par la plateforme : le conteneur part ; ses dossiers, au choix. */
+function RemoveManagedDialog({ open, onOpenChange, name, busy, onConfirm }: {
+  open: boolean; onOpenChange: (v: boolean) => void; name: string; busy: boolean; onConfirm: (wipe: boolean) => void;
+}) {
+  const [wipe, setWipe] = useState(false);
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) setWipe(false); onOpenChange(v); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Supprimer « {name} » ?</DialogTitle>
+          <DialogDescription>La machine sort du parc et son conteneur est arrêté puis supprimé.</DialogDescription>
+        </DialogHeader>
+        <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border p-3">
+          <Checkbox checked={wipe} onCheckedChange={(v) => setWipe(v === true)} className="mt-0.5" />
+          <span>
+            <span className="block text-[13px] font-medium">Effacer aussi ses fichiers</span>
+            <span className="block text-[12px] text-muted-foreground">Les dossiers des équipes et des agents sur cette machine. Sans cette case, ils restent dans les volumes Docker.</span>
+          </span>
+        </label>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>Annuler</Button>
+          <Button variant="destructive" onClick={() => onConfirm(wipe)} disabled={busy}>
+            {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <TrashIcon className="mr-1.5 h-3.5 w-3.5" />} Supprimer
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

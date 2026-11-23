@@ -78,7 +78,7 @@ export interface TeamMachineState {
 
 export interface MachineStatus {
   ok: boolean;
-  /** TEAM_MACHINE_URL / TEAM_MACHINE_TOKEN posés côté serveur. */
+  /** Une machine du parc de ce tableau répond à la plateforme. */
   configured: boolean;
   live: { reachable: boolean; error?: string; apt?: boolean };
   teams: TeamMachineState[];

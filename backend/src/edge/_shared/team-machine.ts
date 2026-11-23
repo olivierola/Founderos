@@ -7,7 +7,7 @@ import { Deno } from "../../compat/index.ts";
 // Une équipe d'agents reçoit un poste Linux partagé (team-machine/, un
 // conteneur). Ce module en est le client et l'annuaire :
 //
-//   · il SIGNE chaque appel (HMAC du jeton TEAM_MACHINE_TOKEN, comme
+//   · il SIGNE chaque appel (HMAC du jeton propre de chaque machine, comme
 //     team-machine/src/auth.mjs le vérifie) ;
 //   · il tient les SECRETS — celui de chaque agent (son identité sur la
 //     machine) et celui de chaque dossier protégé — chiffrés en base, et ne
@@ -65,6 +65,39 @@ export interface FleetMachine {
   info: Record<string, unknown>;
   last_seen_at: string | null;
   last_error: string | null;
+  /** 0311 : créée par la plateforme ('docker'), ou null si déclarée à la main. */
+  managed_by?: "docker" | null;
+  managed_ref?: string | null;
+  provision_state?: "creating" | "ready" | "failed" | null;
+}
+
+// ── Création à la demande (0311) ─────────────────────────────────────────────
+
+/**
+ * Ce qui sait créer et détruire une machine. Seul le backend auto-hébergé
+ * (Node, PLATFORM=self) en installe un — il pilote le Docker de l'hôte — sur
+ * `globalThis` au démarrage. Sous Supabase, il n'y en a pas : la création à la
+ * demande y est simplement indisponible.
+ */
+export interface MachineProvisioner {
+  /** Prêt à créer ? Sinon la raison, à montrer telle quelle. */
+  check(): Promise<{ ok: true } | { ok: false; reason: string }>;
+  /** Lance la machine et attend qu'elle réponde. Le jeton ne passe jamais par un argument de commande. */
+  create(input: { machineId: string; token: string; allowApt: boolean }): Promise<{ ref: string; url: string }>;
+  /** Relance le même conteneur avec d'autres réglages (mêmes volumes, même port, même jeton). */
+  reconfigure(input: { ref: string; token: string; allowApt: boolean }): Promise<void>;
+  /** Arrête et supprime le conteneur ; ses volumes (les dossiers des équipes) aussi si demandé. */
+  destroy(input: { ref: string; volumes: boolean }): Promise<void>;
+}
+
+const PROVISIONER_KEY = "__founderosMachineProvisioner";
+
+export function machineProvisioner(): MachineProvisioner | null {
+  return ((globalThis as Record<string, unknown>)[PROVISIONER_KEY] as MachineProvisioner | undefined) ?? null;
+}
+
+export function installMachineProvisioner(p: MachineProvisioner | null): void {
+  (globalThis as Record<string, unknown>)[PROVISIONER_KEY] = p ?? undefined;
 }
 
 const MACHINE_ROW_COLS = "team_id, dashboard_id, workspace_id, team_key, status, allow_system_packages, url, machine_path, machine_id, scope, agent_id";
@@ -205,29 +238,33 @@ export async function hmacHex(token: string, message: string): Promise<string> {
 }
 
 /**
- * Où joindre la machine : l'URL propre à l'équipe (owners/admins), sinon la
- * configuration vivante (app_config.team_machine_url — relue à chaque run, un
- * tunnel ngrok change d'adresse), sinon l'environnement. Le jeton ne vient que
- * de l'environnement : il ne passe jamais par la base.
+ * Où et comment joindre une machine : SON adresse et SON jeton, rien d'autre.
+ * Il n'y a plus de « machine de la plateforme » posée par l'environnement
+ * (TEAM_MACHINE_URL, TEAM_MACHINE_TOKEN) : une machine est créée à la demande
+ * (0311) ou branchée à la main avec son adresse et son jeton.
+ *
+ * `trusted` : une adresse que la plateforme a posée elle-même (machine créée à
+ * la demande, un port local qu'aucun humain n'a choisi). Sinon l'adresse vient
+ * d'un humain du workspace et passe le contrôle SSRF, sauf en auto-hébergé
+ * (PLATFORM=self) où l'opérateur et le client ne font qu'un : son réseau
+ * interne est le sien.
  */
-export async function machineConfig(admin: SupabaseClient, override?: string | null, ownToken?: string | null): Promise<MachineConfig | null> {
-  const token = ownToken || (Deno.env.get("TEAM_MACHINE_TOKEN") ?? "");
-  if (token.length < 32) return null;
-  let url = override?.trim() || "";
-  if (url) {
-    // Une URL posée sur l'équipe vient d'un humain du workspace, pas de
-    // l'opérateur : elle ne doit pas servir à sonder le réseau interne.
-    const verdict = await assertSafeUrl(url);
+export async function machineConfig(
+  _admin: SupabaseClient, url?: string | null, ownToken?: string | null, trusted = false,
+): Promise<MachineConfig | null> {
+  const token = ownToken ?? "";
+  const address = url?.trim() || "";
+  if (token.length < 32 || !address) return null;
+  if (!trusted && !privateAddressesAllowed()) {
+    const verdict = await assertSafeUrl(address);
     if (!verdict.ok) throw new MachineError(400, "unsafe_url", `URL de machine refusée : ${verdict.reason ?? "adresse interne"}`);
-  } else {
-    try {
-      const { data } = await admin.from("app_config").select("value").eq("key", "team_machine_url").maybeSingle();
-      url = String((data as { value?: string } | null)?.value ?? "").trim();
-    } catch { /* table absente : l'environnement décide */ }
-    if (!url) url = Deno.env.get("TEAM_MACHINE_URL") ?? "";
   }
-  if (!url) return null;
-  return { url: url.replace(/\/+$/, ""), token };
+  return { url: address.replace(/\/+$/, ""), token };
+}
+
+/** Auto-hébergé : les machines du réseau interne de l'opérateur sont permises. */
+export function privateAddressesAllowed(): boolean {
+  return (Deno.env.get("PLATFORM") ?? "").toLowerCase() === "self";
 }
 
 export async function loadFleetMachine(admin: SupabaseClient, id: string): Promise<FleetMachine | null> {
@@ -237,25 +274,27 @@ export async function loadFleetMachine(admin: SupabaseClient, id: string): Promi
   return data as FleetMachine;
 }
 
-/** Où et comment joindre une machine du parc : son URL (ou celle de la
- *  plateforme), son jeton propre s'il en a un (sinon TEAM_MACHINE_TOKEN). */
-export async function fleetConfig(admin: SupabaseClient, m: Pick<FleetMachine, "id" | "url">): Promise<MachineConfig | null> {
+/** Où et comment joindre une machine du parc : son URL et son jeton propre. */
+export async function fleetConfig(admin: SupabaseClient, m: Pick<FleetMachine, "id" | "url" | "managed_by">): Promise<MachineConfig | null> {
   const own = (await readSecrets(admin, "machine", [m.id])).get(m.id) ?? null;
-  return machineConfig(admin, m.url, own);
+  // Sans adresse ni jeton (encore en création, ou incomplète), elle n'est pas
+  // joignable : aucune autre machine ne la remplace.
+  return machineConfig(admin, m.url, own, !!m.managed_by);
 }
 
 /**
- * La configuration d'une attribution : la machine du parc qu'elle désigne —
- * aucune si cette machine est en pause ou retirée —, sinon (lignes d'avant
- * 0304) l'URL propre à l'équipe ou la machine de la plateforme.
+ * La configuration d'une attribution : la machine du parc qu'elle désigne,
+ * aucune si cette machine est en pause ou retirée. Une attribution d'avant
+ * 0304 (sans machine) n'est plus joignable : on la rattache à une machine du
+ * parc depuis l'onglet Machines.
  */
-export async function configFor(admin: SupabaseClient, row: Pick<MachineRow, "url"> & { machine_id?: string | null }): Promise<MachineConfig | null> {
+export async function configFor(admin: SupabaseClient, row: { machine_id?: string | null }): Promise<MachineConfig | null> {
   if (row.machine_id) {
     const m = await loadFleetMachine(admin, row.machine_id);
     if (!m || m.status !== "active") return null;
     return fleetConfig(admin, m);
   }
-  return machineConfig(admin, row.url);
+  return null;
 }
 
 /** Pose (ou retire, avec null) le jeton propre d'une machine. */
@@ -266,6 +305,11 @@ export async function setMachineToken(admin: SupabaseClient, machineId: string, 
   }
   if (token.length < 32) throw new MachineError(400, "bad_token", "le jeton d'une machine fait 32 caractères au moins");
   await storeSecret(admin, "machine", machineId, token);
+}
+
+/** Le jeton propre d'une machine, déchiffré (pour la relancer, jamais pour un modèle). */
+export async function readMachineToken(admin: SupabaseClient, machineId: string): Promise<string | null> {
+  return (await readSecrets(admin, "machine", [machineId])).get(machineId) ?? null;
 }
 
 export async function hasMachineToken(admin: SupabaseClient, machineIds: string[]): Promise<Set<string>> {
@@ -550,20 +594,34 @@ export async function loadTeamMachine(admin: SupabaseClient, teamId: string): Pr
 }
 
 /** Donne une machine à une équipe (ou la réveille). */
+/** La première machine active d'un tableau (la plus ancienne), ou null. */
+async function firstActiveMachine(admin: SupabaseClient, dashboardId: string): Promise<string | null> {
+  const { data } = await admin.from("machines").select("id").eq("dashboard_id", dashboardId).eq("status", "active")
+    .order("created_at", { ascending: true }).limit(1).maybeSingle();
+  return (data as { id: string } | null)?.id ?? null;
+}
+
 export async function enableTeamMachine(
   admin: SupabaseClient,
-  input: { dashboardId: string; workspaceId: string; team: TeamCfg; userId: string | null; allowSystemPackages?: boolean },
+  input: { dashboardId: string; workspaceId: string; team: TeamCfg; userId: string | null; allowSystemPackages?: boolean; machineId?: string | null },
 ): Promise<MachineRow> {
   const { data: existing } = await admin.from("team_machines").select("*").eq("team_id", input.team.id).maybeSingle();
   if (existing && (existing as MachineRow).dashboard_id !== input.dashboardId) {
     throw new MachineError(409, "team_conflict", "cette équipe a déjà une machine dans un autre service");
   }
+  // La machine du parc qui la portera : celle demandée, celle qu'elle avait,
+  // sinon la première machine active du tableau. Il n'y a plus de machine de
+  // la plateforme vers laquelle se rabattre.
+  const machineId = input.machineId ?? (existing as { machine_id?: string | null } | null)?.machine_id ?? await firstActiveMachine(admin, input.dashboardId);
+  if (!machineId) {
+    throw new MachineError(409, "no_machine", "aucune machine dans ce service : créez-en une dans l'onglet Machines");
+  }
   const row = existing
-    ? { ...(existing as MachineRow), status: "active" as const }
+    ? { ...(existing as MachineRow), status: "active" as const, machine_id: machineId }
     : {
       team_id: input.team.id, dashboard_id: input.dashboardId, workspace_id: input.workspaceId,
       team_key: teamKeyFor(input.team), status: "active" as const,
-      allow_system_packages: !!input.allowSystemPackages, url: null, machine_path: null,
+      allow_system_packages: !!input.allowSystemPackages, url: null, machine_path: null, machine_id: machineId,
     };
   const { error } = await admin.from("team_machines").upsert({
     ...row, created_by: input.userId, updated_at: new Date().toISOString(),
@@ -670,7 +728,7 @@ export async function pauseTeamMachine(admin: SupabaseClient, machine: MachineRo
 
 async function machineFor(admin: SupabaseClient, machine: MachineRow, team: TeamCfg): Promise<MachineConfig> {
   const cfg = await configFor(admin, machine);
-  if (!cfg) throw new MachineError(503, "machine_not_configured", "machine d'équipe non configurée (TEAM_MACHINE_URL / TEAM_MACHINE_TOKEN)");
+  if (!cfg) throw new MachineError(503, "machine_not_configured", "aucune machine joignable pour cette équipe : créez-en une ou rattachez-la à une machine dans l'onglet Machines");
   if (!machine.machine_path) await ensureTeamOnMachine(admin, machine, team, cfg);
   return cfg;
 }

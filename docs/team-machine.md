@@ -20,8 +20,9 @@ Depuis la migration `0304_machines.sql`, une machine est une ressource à part e
 
 Les règles :
 
-- **Une machine** = une ligne de `machines`. Sans adresse, c'est la machine de la plateforme (`app_config.team_machine_url`, puis `TEAM_MACHINE_URL`). Avec une adresse, elle doit être publique (contrôle SSRF).
-- **Son jeton** : celui de la plateforme (`TEAM_MACHINE_TOKEN`) par défaut, ou un jeton propre, chiffré dans `team_machine_secrets` (kind `machine`) et jamais réaffiché.
+- **Une machine** = une ligne de `machines`, avec **son adresse et son jeton**. Il n'y a plus de machine de la plateforme posée par l'environnement : une machine est créée à la demande (0311, un conteneur Docker de l'hôte, en auto-hébergé) ou branchée à la main. Une adresse branchée à la main doit être publique (contrôle SSRF), sauf en auto-hébergé (`PLATFORM=self`), où le réseau interne est celui de l'opérateur.
+- **Son jeton** : propre à la machine, 32 caractères au moins, chiffré dans `team_machine_secrets` (kind `machine`) et jamais réaffiché. Sans jeton, la machine ne répond pas : aucune autre ne la remplace.
+- **Donner une machine à une équipe** sans en choisir une prend la première machine active du service. Une attribution d'avant 0304, sans machine, n'est plus joignable : on la rattache depuis l'onglet Machines.
 - **Une attribution** reste une ligne de `team_machines`, qui gagne `machine_id`, `scope` (`team` ou `agent`) et `agent_id`. Un agent seul est une « équipe d'un » dont l'id est `agent-<uuid>`.
 - **Changer de machine** ne déplace pas les fichiers. L'équipe repart d'un dossier vide sur la nouvelle, avec les mêmes agents et les mêmes dossiers protégés (redéclarés au premier appel). L'ancienne garde ce qu'elle avait.
 - **Mettre une machine en pause** retire les outils `team_*` à tous ceux qui l'utilisent et suspend leurs équipes sur la machine. Une machine utilisée ne se supprime pas.
@@ -73,7 +74,7 @@ Les règles d'un dossier protégé :
 
 Chaque action est inscrite dans `team_machine_audit` et affichée dans le panneau.
 
-La plateforme signe chaque appel (HMAC-SHA256 de `TEAM_MACHINE_TOKEN`, horodatage à ±120 s, nonce à usage unique). Ce jeton permet d'administrer la machine (créer, suspendre, archiver). Il **ne suffit pas** pour agir au nom d'un agent ni pour ouvrir un dossier : il faut en plus les secrets.
+La plateforme signe chaque appel (HMAC-SHA256 du jeton de la machine, horodatage à ±120 s, nonce à usage unique). Ce jeton permet d'administrer la machine (créer, suspendre, archiver). Il **ne suffit pas** pour agir au nom d'un agent ni pour ouvrir un dossier : il faut en plus les secrets.
 
 ### Limites connues
 
@@ -85,46 +86,35 @@ La plateforme signe chaque appel (HMAC-SHA256 de `TEAM_MACHINE_TOKEN`, horodatag
 
 ## Mise en route en local (Docker Desktop)
 
-1. Choisir un jeton de 32 caractères au moins, et le poser des deux côtés :
+1. Docker Desktop démarré, puis `npm run dev:local`.
+2. Dans FounderOS, onglet **Machines** d'un service : **Ajouter une machine**, puis **Créer une machine**. Le backend construit l'image `founderos/team-machine` si elle manque, lance le conteneur `founderos-tm-<id>` (port 8100 à 8199, volumes nommés, jeton généré) et suit sa création.
+3. Vérifier l'isolement dans le conteneur :
 
    ```powershell
-   $env:TEAM_MACHINE_TOKEN = -join ((48..57 + 65..90 + 97..122) | Get-Random -Count 48 | ForEach-Object { [char]$_ })
-   docker compose -f team-machine/compose.yaml up -d --build
-   supabase secrets set "TEAM_MACHINE_TOKEN=$env:TEAM_MACHINE_TOKEN" --project-ref <ref>
-   ```
-
-2. Vérifier l'isolement dans le conteneur :
-
-   ```powershell
-   docker exec team-machine node /opt/team-machine/src/selftest.mjs
+   docker exec founderos-tm-<id> node /opt/team-machine/src/selftest.mjs
    ```
 
    Le script crée une équipe jetable (sous `/tmp`, avec des uids à part), trois agents et un dossier protégé. Il vérifie notamment qu'un agent ne lit ni le dossier perso d'un autre, ni un dossier protégé sans son secret, ni l'état de la machine ; qu'il ne devient pas root ; qu'il ne tue pas les processus d'un autre ; et qu'une rotation ou un archivage coupe l'accès. Il nettoie derrière lui. Code de sortie 0 = tout passe.
 
-3. Exposer la machine aux fonctions cloud. Ajouter un tunnel à `ngrok.yml` :
+4. Onglet **Attributions** : donner la machine à une équipe ou à un agent.
 
-   ```yaml
-   team-machine:
-     proto: http
-     addr: 8091
-   ```
+Réglages facultatifs de la création, dans `backend/.env.self` : `TEAM_MACHINE_IMAGE`, `TEAM_MACHINE_PORTS` (`8100-8199`), `TEAM_MACHINE_HOST` (`localhost`), `TEAM_MACHINE_CPUS`, `TEAM_MACHINE_MEMORY`.
 
-   `scripts/start-agents-infra.ps1` démarre ensuite le conteneur s'il existe, repère le tunnel vers `:8091` et écrit `app_config.team_machine_url`, que la plateforme relit à chaque run.
-
-4. Dans FounderOS, ouvrir **Machine** sur la carte d'une équipe, puis **Donner une machine à l'équipe**.
+Une machine lancée à la main (`team-machine/compose.yaml`, avec `TEAM_MACHINE_TOKEN` côté conteneur) se branche avec **Brancher une machine** : son adresse (`http://localhost:8091`) et ce même jeton.
 
 Utiliser des **volumes nommés**, comme dans le compose fourni. Un dossier Windows monté ignore `chown` et les droits Unix : l'isolement tomberait avec.
 
 ## Installation on-prem (VM, docker compose)
 
-L'installateur génère `TEAM_MACHINE_TOKEN` dans le `.env`. Pour activer la machine :
+L'installateur génère `TEAM_MACHINE_TOKEN` dans le `.env` : c'est le jeton **du conteneur** de la machine, le backend ne le lit pas. Pour activer la machine :
 
-1. Ajouter `TEAM_MACHINE_URL=http://team-machine:8080` au `.env`.
-2. Lancer avec le profil :
+1. Lancer avec le profil :
 
    ```bash
    docker compose -f deploy/compose/docker-compose.yml --env-file deploy/compose/.env --profile team-machine up -d
    ```
+
+2. Dans FounderOS, onglet **Machines** : **Brancher une machine**, adresse `http://team-machine:8080`, et le jeton du `.env`.
 
 La machine ne publie aucun port : seul le backend lui parle, par le réseau interne.
 
@@ -143,12 +133,7 @@ Côté machine :
 | `MACHINE_JOB_MAX_HOURS` | `12` | Durée de vie d'un job de fond |
 | `MACHINE_JOBS_PER_AGENT` | `8` | Jobs de fond simultanés par agent |
 
-Côté plateforme :
-
-| Variable | Rôle |
-| --- | --- |
-| `TEAM_MACHINE_TOKEN` | Le même jeton que `MACHINE_TOKEN` |
-| `TEAM_MACHINE_URL` | L'URL de la machine. `app_config.team_machine_url` l'emporte s'il est posé ; une URL propre à une équipe (réservée aux owners et admins, contrôlée contre le SSRF) l'emporte sur les deux. |
+Côté plateforme : aucune variable. L'adresse et le jeton de chaque machine sont en base (le jeton chiffré). En auto-hébergé, la création à la demande se règle avec `TEAM_MACHINE_IMAGE`, `TEAM_MACHINE_PORTS`, `TEAM_MACHINE_HOST`, `TEAM_MACHINE_CPUS` et `TEAM_MACHINE_MEMORY`, tous facultatifs.
 
 ## Exploitation
 
@@ -156,7 +141,7 @@ Côté plateforme :
 | --- | --- |
 | Un agent n'a plus accès (« identité ne correspond plus ») | Panneau Machine → l'agent → **Réinitialiser son identité**. Ses fichiers restent les siens. |
 | Doute sur qui a eu accès à un dossier | Retirer les membres en trop, puis **Renouveler le secret**. |
-| Récupérer un dossier archivé | `docker exec team-machine ls /teams/<équipe>/.archives`, puis `docker cp`. |
+| Récupérer un dossier archivé | `docker exec <conteneur> ls /teams/<équipe>/.archives`, puis `docker cp`. |
 | Machine recréée, volume d'état perdu | Rien à faire : au premier appel, l'équipe, l'agent et ses dossiers protégés se redéclarent avec leurs secrets. Les dossiers reviennent vides : seul le volume `/teams` contenait les fichiers. |
 | Tout arrêter pour une équipe | **Mettre en pause** : les outils `team_*` disparaissent, les processus s'arrêtent, les fichiers restent. |
 

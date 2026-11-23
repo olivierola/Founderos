@@ -27,8 +27,10 @@ process.env.FUNCTIONS_URL = `http://localhost:${PORT}`;
 process.env.STORAGE_DIR = `${process.env.TEMP ?? "/tmp"}/founderos-team-machine-e2e-${process.pid}`;
 process.env.MGMT_PORT = "0";
 process.env.CREDENTIAL_ENCRYPTION_KEY = randomBytes(32).toString("base64");
-process.env.TEAM_MACHINE_TOKEN = "m".repeat(48);
-process.env.TEAM_MACHINE_URL = `http://127.0.0.1:${MPORT}`;
+// La machine de l'essai : branchée à la main (son adresse, son jeton), comme
+// toute machine depuis qu'il n'y a plus de machine de la plateforme.
+const MACHINE_TOKEN = "m".repeat(48);
+const MACHINE_URL = `http://127.0.0.1:${MPORT}`;
 delete process.env.LLM_UPSTREAM;
 delete process.env.AUTH_SMTP_HOST;
 delete process.env.RESEND_API_KEY;
@@ -62,7 +64,7 @@ describe("machine d'équipe : identités, dossiers protégés, secrets (0296)", 
   const startMachine = async () => {
     const base = mkdtempSync(path.join(tmpdir(), "tm-e2e-")).split("\\").join("/");
     machineDirs.push(base);
-    const config = { ...sup.readConfig({}), token: process.env.TEAM_MACHINE_TOKEN, root: `${base}/teams`, stateDir: `${base}/state`, dry: true, shell: SHELL };
+    const config = { ...sup.readConfig({}), token: MACHINE_TOKEN, root: `${base}/teams`, stateDir: `${base}/state`, dry: true, shell: SHELL };
     supervisor = sup.createMachine(config, () => {});
     await supervisor.boot();
     const resolve = supervisor.resolve.bind(supervisor);
@@ -167,7 +169,20 @@ describe("machine d'équipe : identités, dossiers protégés, secrets (0296)", 
     assert.equal(await tm.loadAgentMachine(admin, agentRow("nova")), null);
   });
 
-  it("un humain donne une machine à l'équipe", async () => {
+  it("sans machine dans le parc, une équipe n'en reçoit pas", async () => {
+    const r = await fn({ action: "enable", dashboard_id: id.dash, team_id: id.team });
+    assert.equal(r.status, 409, JSON.stringify(r.json));
+  });
+
+  it("un humain branche une machine (adresse et jeton) puis la donne à l'équipe", async () => {
+    const created = await fleet({ action: "create", dashboard_id: id.dash, name: "Docker local", kind: "docker", url: MACHINE_URL, token: MACHINE_TOKEN });
+    assert.equal(created.status, 200, JSON.stringify(created.json));
+    id.machine = (created.json.machine as { id: string }).id;
+    assert.equal((created.json.probe as { reachable: boolean }).reachable, true, JSON.stringify(created.json.probe));
+    assert.ok(!JSON.stringify(created.json).includes(MACHINE_TOKEN), "le jeton ne ressort pas");
+    const noToken = await fleet({ action: "create", dashboard_id: id.dash, name: "Sans jeton", url: MACHINE_URL });
+    assert.equal(noToken.status, 400, "une machine branchée à la main a son jeton");
+
     const r = await fn({ action: "enable", dashboard_id: id.dash, team_id: id.team });
     assert.equal(r.status, 200, JSON.stringify(r.json));
     assert.equal((r.json.machine as { team_key: string }).team_key, "data-8f3a");
@@ -328,10 +343,9 @@ describe("machine d'équipe : identités, dossiers protégés, secrets (0296)", 
     return { status: res.status, json: await res.json() as Record<string, unknown> };
   };
 
-  it("parc : déclarer la machine de la plateforme reprend les attributions d'avant, et la sonde répond", async () => {
-    const r = await fleet({ action: "create", dashboard_id: id.dash, name: "Docker local", kind: "docker" });
+  it("parc : la machine branchée répond, et porte l'équipe", async () => {
+    const r = await fleet({ action: "probe", machine_id: id.machine });
     assert.equal(r.status, 200, JSON.stringify(r.json));
-    id.machine = (r.json.machine as { id: string }).id;
     assert.equal((r.json.probe as { reachable: boolean }).reachable, true, JSON.stringify(r.json.probe));
     assert.equal(((r.json.probe as { info: { version: string } }).info).version, "0.3.0");
     const { data: row } = await admin.from("team_machines").select("machine_id").eq("team_id", id.team).single();
@@ -340,7 +354,7 @@ describe("machine d'équipe : identités, dossiers protégés, secrets (0296)", 
     assert.equal(list.status, 200, JSON.stringify(list.json));
     const m = (list.json.machines as Array<{ id: string; assignments: number; has_token: boolean }>)[0];
     assert.equal(m.assignments, 1);
-    assert.equal(m.has_token, false);
+    assert.equal(m.has_token, true);
     assert.equal((list.json.agents as unknown[]).length, 4);
   });
 
@@ -411,11 +425,11 @@ describe("machine d'équipe : identités, dossiers protégés, secrets (0296)", 
     r = await fleet({ action: "update", machine_id: id.machine, token: own });
     assert.equal((r.json.machine as { has_token: boolean }).has_token, true);
     assert.ok(!JSON.stringify(r.json).includes(own));
-    const cfg = await tm.fleetConfig(admin, { id: id.machine, url: null });
+    const cfg = await tm.fleetConfig(admin, { id: id.machine, url: MACHINE_URL, managed_by: null });
     assert.equal(cfg?.token, own);
     const list = await fleet({ action: "list", dashboard_id: id.dash });
     assert.ok(!JSON.stringify(list.json).includes(own));
     await fleet({ action: "update", machine_id: id.machine, token: null });
-    assert.equal((await tm.fleetConfig(admin, { id: id.machine, url: null }))?.token, process.env.TEAM_MACHINE_TOKEN);
+    assert.equal(await tm.fleetConfig(admin, { id: id.machine, url: MACHINE_URL, managed_by: null }), null, "sans jeton, pas de repli : injoignable");
   });
 });

@@ -102,7 +102,7 @@ function TeamMachinePanel({ dashboardId, team, agents }: {
       <div className="flex flex-wrap items-center gap-2 text-[12px]">
         {!data.configured ? (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/12 px-2.5 py-1 text-amber-700 dark:text-amber-400">
-            <WarningIcon className="h-3.5 w-3.5" /> Non branchée : TEAM_MACHINE_URL et TEAM_MACHINE_TOKEN manquent côté serveur
+            <WarningIcon className="h-3.5 w-3.5" /> Aucune machine joignable : créez-en une dans l'onglet Machines
           </span>
         ) : data.live.reachable ? (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/12 px-2.5 py-1 text-emerald-700 dark:text-emerald-400">
