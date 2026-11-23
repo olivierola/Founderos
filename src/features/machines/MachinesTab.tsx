@@ -45,7 +45,7 @@ const VIEW_TITLE: Record<MachinesView, { title: string; sub: string }> = {
   fichiers: { title: "Fichiers", sub: "Le système de fichiers, tel qu'un agent le voit." },
   attributions: { title: "Attributions", sub: "Qui travaille sur quelle machine." },
   configuration: { title: "Configuration", sub: "Adresse, jeton, paquets système, pause." },
-  catalogue: { title: "Catalogue", sub: "Des machines taillées par métier : les outils de la cyber, de la data, du développement… Pour vos équipes, ou pour y embarquer un agent." },
+  catalogue: { title: "Composer une machine", sub: "Partez d'une machine de base et choisissez ses outils dans le catalogue, par catégorie. Pour vos équipes, ou pour y embarquer un agent." },
 };
 
 
@@ -182,9 +182,10 @@ function MachineCard({ machine: m, fleet, dashboardId, onOpen }: {
   const refresh = useRefreshFleet(dashboardId);
   const [probing, setProbing] = useState(false);
   const health = HEALTH_META[machineHealth(m)];
-  const tpl = m.template ? fleet.catalog?.templates.find((t) => t.id === m.template) ?? null : null;
-  // Une machine du catalogue porte l'icône de son métier.
-  const Icon = (tpl && CATEGORY_ICON[tpl.category]) || (KIND_ICON[m.kind] ?? DesktopTowerIcon);
+  const preset = m.template ? fleet.catalog?.presets.find((p) => p.id === m.template) ?? null : null;
+  const toolCount = m.tools?.length ?? 0;
+  // Une machine composée depuis un preset porte l'icône de sa catégorie.
+  const Icon = (preset && CATEGORY_ICON[preset.category]) || (KIND_ICON[m.kind] ?? DesktopTowerIcon);
   const info = m.info ?? {};
   const here = fleet.assignments.filter((a) => a.machine_id === m.id && a.status === "active");
   const teams = here.filter((a) => a.scope === "team").length;
@@ -222,7 +223,8 @@ function MachineCard({ machine: m, fleet, dashboardId, onOpen }: {
           <div className="truncate text-[15px] font-semibold tracking-tight">{m.name}</div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-muted-foreground">
             <span>{KIND_LABEL[m.kind]}</span>
-            {tpl && <span className="rounded bg-muted px-1.5 py-px text-[11px] text-foreground/80">{tpl.name}</span>}
+            {preset && <span className="rounded bg-muted px-1.5 py-px text-[11px] text-foreground/80">{preset.name}</span>}
+            {toolCount > 0 && <span className="text-[11.5px]">{toolCount} outil{toolCount > 1 ? "s" : ""}</span>}
             {info.version && <span className="font-mono text-[11.5px]">v{info.version}</span>}
           </div>
         </div>

@@ -424,22 +424,23 @@ describe("agents embarqués : manifeste, archive, passerelle", { skip, timeout: 
     }
   });
 
-  it("un agent embarqué sur une machine du catalogue : ses outils entrent dans son conteneur", async () => {
+  it("un agent embarqué avec des outils du catalogue : ils entrent dans son conteneur", async () => {
     const { compileManifest } = await import("./manifest.ts");
     const { dockerfile } = await import("./bundle.ts");
-    // 0317 : le modèle se garde sur les machines du parc comme sur les agents embarqués.
-    await platform.db.query("select template from public.machines limit 0");
+    // 0318 : la sélection d'outils se garde sur les machines du parc comme sur les agents embarqués.
+    await platform.db.query("select tools from public.machines limit 0");
     const before = await compileManifest(admin, id.agent);
-    assert.equal(before.manifest.machine.template, undefined, "sans modèle, le manifeste ne change pas");
-    await platform.db.command("update public.embedded_agent_configs set machine_template = 'data-analysis' where agent_id = $1", [id.agent]);
+    assert.deepEqual(before.manifest.machine.catalog_tools, [], "sans outil, le manifeste ne change pas");
+    await platform.db.command("update public.embedded_agent_configs set tools = '{data-analysis,defsec-sast}' where agent_id = $1", [id.agent]);
     const { manifest, config, sha } = await compileManifest(admin, id.agent);
-    assert.equal(manifest.machine.template, "data-analysis");
-    assert.notEqual(sha, before.sha, "changer de machine se voit sur l'empreinte");
+    assert.deepEqual([...manifest.machine.catalog_tools].sort(), ["data-analysis", "defsec-sast"]);
+    assert.notEqual(sha, before.sha, "changer d'outils se voit sur l'empreinte");
     const df = dockerfile(manifest, config);
-    assert.match(df, /Machine du catalogue : Analyse de données/);
+    assert.match(df, /Outils du catalogue : .*Analyse de données/);
     assert.match(df, /pip3 install .*'pandas'/);
-    assert.ok(df.indexOf("'pandas'") < df.indexOf("COPY manifest.json"), "les outils du métier avant la configuration");
-    await platform.db.command("update public.embedded_agent_configs set machine_template = null where agent_id = $1", [id.agent]);
+    assert.match(df, /'semgrep'/);
+    assert.ok(df.indexOf("'pandas'") < df.indexOf("COPY manifest.json"), "les outils avant la configuration");
+    await platform.db.command("update public.embedded_agent_configs set tools = '{}' where agent_id = $1", [id.agent]);
   });
 
   it("une clé révoquée ne sert plus", async () => {

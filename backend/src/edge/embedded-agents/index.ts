@@ -26,7 +26,7 @@ import { newKey } from "../../embedded/keys.ts";
 import { compileManifest, CONFIG_COLUMNS, type EmbeddedConfig } from "../../embedded/manifest.ts";
 import { snapshotFor, toJsonl } from "../../embedded/knowledge.ts";
 import { importJournal } from "../../embedded/import.ts";
-import { catalog, templateById } from "../../machines/catalog.ts";
+import { catalog, presetById, toolById } from "../../machines/catalog.ts";
 import { syncText } from "../../embedded/gateway.ts";
 import { embeddedDocker } from "../../platform/embedded-docker.ts";
 
@@ -116,11 +116,13 @@ export default defineHandler(async (req) => {
           deployment: "embedded", created_by: auth.userId, chat_enabled: true, mission_enabled: true,
         }).select("id, name").single();
         if (error) throw new Error(error.message);
-        // Parti d'une machine du catalogue : ses outils et ses ressources.
-        const tpl = templateById(str(body.machine_template, 60));
+        // Parti d'un preset du catalogue : ses outils et ses ressources suggérées.
+        const preset = presetById(str(body.machine_template, 60));
+        const picked = Array.isArray(body.tools) ? body.tools.map((t) => str(t, 60)).filter((t) => !!toolById(t)) : [];
+        const tools = [...new Set([...(preset?.tools ?? []), ...picked])];
         const { error: cfgErr } = await admin.from("embedded_agent_configs").insert({
           agent_id: agent.id, workspace_id: board.workspace_id, project_id: board.project_id, service_dashboard_id: board.id,
-          ...(tpl ? { machine_template: tpl.id, cpus: tpl.cpus, memory_mb: tpl.memory_mb, disk_mb: tpl.disk_mb } : {}),
+          tools, ...(preset ? { machine_template: preset.id, cpus: preset.cpus, memory_mb: preset.memory_mb, disk_mb: preset.disk_mb } : {}),
         });
         if (cfgErr) throw new Error(cfgErr.message);
         return jsonResponse({ ok: true, agent });
@@ -150,7 +152,8 @@ export default defineHandler(async (req) => {
         pick("pip_packages", Array.isArray, (v) => list(v) as never);
         pick("npm_packages", Array.isArray, (v) => list(v) as never);
         pick("runtime_version", (v) => /^[0-9a-z.-]{1,20}$/i.test(String(v)), (v) => String(v) as never);
-        pick("machine_template", (v) => v === null || !!templateById(String(v)), (v) => (v === null ? null : String(v)) as never);
+        pick("machine_template", (v) => v === null || !!presetById(String(v)), (v) => (v === null ? null : String(v)) as never);
+        pick("tools", (v) => Array.isArray(v) && (v as unknown[]).every((x) => !!toolById(String(x))), (v) => [...new Set((v as unknown[]).map(String))] as never);
         if (Array.isArray(body.seed_files)) {
           patch.seed_files = (body.seed_files as Array<Record<string, unknown>>).slice(0, 50)
             .map((f) => ({ path: str(f?.path, 200), content: typeof f?.content === "string" ? f.content.slice(0, 200_000) : "" }))

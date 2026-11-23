@@ -17,7 +17,7 @@ Depuis la migration `0304_machines.sql`, une machine est une ressource à part e
 | Fichiers | Le système de fichiers **vu par un agent** : on choisit par quels yeux on regarde, et on lit ce que cet agent peut lire. Lecture seule ; chaque fichier ouvert par un humain est journalisé (`human_read`). |
 | Attributions | Une machine par équipe, et éventuellement une machine propre à un agent, qui passe avant celle de son équipe. |
 | Configuration | Nom, type, adresse, jeton propre, paquets système, pause, suppression. |
-| Catalogue | Des machines taillées par métier (cyber, data, dev, IA, web, ops, documents) : en créer une, ou y embarquer un agent (voir plus bas). |
+| Composer une machine | Partir de la machine de base et cocher des outils du catalogue (par catégorie) ; en créer une, ou y embarquer un agent (voir plus bas). |
 
 Les règles :
 
@@ -31,15 +31,15 @@ Les règles :
 
 Le superviseur 0.2.0 ajoute deux opérations d'administration : `machine.info` (version, hôte, charge, mémoire, disque, limites) et `activity` (processus et jobs des équipes demandées).
 
-## Le catalogue : des machines taillées par métier (0317)
+## Composer une machine : un catalogue d'outils (0317, 0318)
 
-Le sous-onglet **Catalogue** propose des machines prêtes pour un métier, par catégorie : Cybersécurité (reconnaissance, test d'intrusion web, analyse et réponse à incident), Data (analyse, ingénierie), Développement (web, Python, polyglotte), IA et ML (apprentissage automatique, notebooks), Web et collecte, Ops et cloud, Documents et OCR. Le catalogue est défini dans `backend/src/machines/catalog.ts` (une seule source, servie au front par la fonction `machines`).
+On part d'une **machine de base** (team-machine : Node, Python, shell, navigateur) et on **coche les outils** qu'on veut y mettre, pris dans un catalogue par catégorie : Développement, Data, IA et ML, Web et collecte, Ops et cloud, Documents, **Sécurité défensive** (DFIR, analyse mémoire, captures réseau, audit de code et de dépendances, journaux) et **Audit réseau (autorisé)**. Le catalogue (`backend/src/machines/catalog.ts`, une seule source servie au front par `machines`) liste des **outils** et des **presets** (sélections toutes faites : « Analyste data », « Réponse à incident »… qu'on ajuste ensuite). Un identifiant d'outil ou de preset ne change jamais de sens : on en ajoute, on n'en retire pas.
 
-- **Une machine du catalogue** est une machine d'équipe (même superviseur, même isolement, un compte Linux par agent) dont l'image ajoute les outils du métier : `founderos/team-machine-<modèle>:<version>`, construite sur l'hôte à la première création (`docker build` depuis un Dockerfile généré, sans contexte), avec les ressources du modèle (CPU, mémoire). Les binaires setuid ajoutés par les paquets sont désarmés comme dans l'image de base.
-- **Créer cette machine** la crée à la demande (auto-hébergé) ; `machines.template` garde son modèle, la carte du parc l'affiche. On la donne ensuite à une équipe ou à un agent (Attributions).
-- **Embarquer un agent** ouvre l'onglet Agents embarqués avec ce modèle : `embedded_agent_configs.machine_template`, ses paquets entrent dans le conteneur de l'agent (même distribution, Debian bookworm) avant ses paquets propres, et ses ressources deviennent celles du conteneur.
-- Les outils de cybersécurité ne s'utilisent que sur des systèmes qu'on est autorisé à tester ; la carte le rappelle.
-- Un modèle ne change jamais de sens : on en ajoute, on n'en retire pas.
+- **L'image d'une sélection** est la machine de base plus une couche qui installe les outils cochés : `founderos/team-machine-tools-<hash>:<version>` (le hash vient de la liste triée des outils, donc deux machines aux mêmes outils partagent l'image), construite sur l'hôte à la première création (`docker build` depuis un Dockerfile généré, sans contexte). Sans aucun outil, c'est l'image de base elle-même. Les binaires setuid ajoutés par les paquets sont désarmés comme dans l'image de base.
+- **Créer cette machine** la crée à la demande (auto-hébergé) ; `machines.tools` garde sa sélection (et `machines.template` le preset de départ, pour l'affichage). On la donne ensuite à une équipe ou à un agent (Attributions).
+- **Embarquer un agent** ouvre l'onglet Agents embarqués avec la sélection d'outils (`?tools=`) : ces outils (`embedded_agent_configs.tools`) entrent dans le conteneur de l'agent (même distribution, Debian bookworm) avant ses paquets propres.
+- Les **paquets** sont des noms Debian bookworm (apt), PyPI (pip) et npm, mis entre guillemets et filtrés : un nom qui contient un caractère de shell est écarté.
+- Les outils d'**audit réseau** ne s'utilisent que sur des systèmes qu'on est autorisé à tester ; l'interface le rappelle. On n'embarque pas d'agent d'attaque autonome prêt à l'emploi dans le catalogue ; qui en a besoin ajoute lui-même ses paquets.
 
 ## Ce que voient les agents
 

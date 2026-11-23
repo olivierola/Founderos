@@ -31,7 +31,9 @@ export interface EmbeddedConfig {
   seed_files: SeedFile[];
   shell_enabled: boolean;
   runtime_version: string;
-  /** 0317 : la machine du catalogue dont le conteneur reprend les outils. */
+  /** 0318 : les outils du catalogue installés dans le conteneur. */
+  tools: string[];
+  /** 0317 : le preset du catalogue choisi au départ (pour l'affichage). */
   machine_template: string | null;
 }
 
@@ -111,7 +113,7 @@ export function useRefreshEmbedded(dashboardId: string) {
 type Res = { ok: boolean; error?: string };
 
 export const embeddedApi = {
-  create: (dashboardId: string, input: { name: string; persona?: string; instructions?: string; machine_template?: string }) =>
+  create: (dashboardId: string, input: { name: string; persona?: string; instructions?: string; machine_template?: string; tools?: string[] }) =>
     callEdge<Res & { agent: { id: string; name: string } }>("embedded-agents", { action: "create", dashboard_id: dashboardId, ...input }),
   updateConfig: (agentId: string, patch: Partial<Omit<EmbeddedConfig, "agent_id">>) =>
     callEdge<Res>("embedded-agents", { action: "update_config", agent_id: agentId, ...patch }),

@@ -14,16 +14,16 @@
 //   TEAM_MACHINE_HOST=localhost    l'hôte par lequel ce backend joint les conteneurs
 //   TEAM_MACHINE_CPUS=4  TEAM_MACHINE_MEMORY=8g   limites de chaque conteneur
 //
-// Une machine du catalogue (machines/catalog.ts) part d'une image construite
-// pour son modèle (founderos/team-machine-<modèle>:<version>, team-machine et
-// les outils du métier), avec les ressources du modèle.
+// Une machine avec des outils du catalogue (machines/catalog.ts) part d'une
+// image construite pour sa sélection (founderos/team-machine-tools-<hash>:<version>,
+// team-machine et les outils choisis) ; sans outil, l'image de base elle-même.
 
 import { execFile, spawn } from "node:child_process";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { MachineProvisioner } from "../edge/_shared/team-machine.ts";
-import { machineDockerfile, templateById, templateImage, type MachineTemplate } from "../machines/catalog.ts";
+import { selectionDockerfile, selectionImage } from "../machines/catalog.ts";
 
 const backendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -96,23 +96,24 @@ function buildFromStdin(tag: string, dockerfile: string, timeoutMs = 30 * 60_000
   });
 }
 
-const templateReady = new Map<string, Promise<string>>();
-/** L'image d'un modèle du catalogue, construite une fois sur cet hôte. */
-function ensureTemplateImage(t: MachineTemplate): Promise<string> {
-  const tag = templateImage(IMAGE, t);
-  let p = templateReady.get(tag);
+const selectionReady = new Map<string, Promise<string>>();
+/** L'image d'une sélection d'outils, construite une fois sur cet hôte (l'image de base sans outil). */
+function ensureSelectionImage(tools: string[]): Promise<string> {
+  const tag = selectionImage(IMAGE, tools);
+  if (tag === IMAGE) return ensureImage().then(() => IMAGE);
+  let p = selectionReady.get(tag);
   if (!p) {
     p = (async () => {
       await ensureImage();
       try {
         await docker(["image", "inspect", tag]);
       } catch {
-        console.log(`[machines] image ${tag} absente : construction (${t.name}), quelques minutes`);
-        await buildFromStdin(tag, machineDockerfile(t, IMAGE));
+        console.log(`[machines] image ${tag} absente : construction (${tools.length} outil(s)), quelques minutes`);
+        await buildFromStdin(tag, selectionDockerfile(tools, IMAGE));
       }
       return tag;
-    })().catch((e) => { templateReady.delete(tag); throw e; });
-    templateReady.set(tag, p);
+    })().catch((e) => { selectionReady.delete(tag); throw e; });
+    selectionReady.set(tag, p);
   }
   return p;
 }
@@ -186,10 +187,9 @@ export function dockerMachineProvisioner(): MachineProvisioner {
       }
     },
 
-    async create({ machineId, token, allowApt, template }) {
-      const t = templateById(template);
-      const image = t ? await ensureTemplateImage(t) : (await ensureImage(), IMAGE);
-      const shape = t ? { image, cpus: String(t.cpus), memory: `${t.memory_mb}m` } : { image, cpus: CPUS, memory: MEMORY };
+    async create({ machineId, token, allowApt, tools }) {
+      const image = await ensureSelectionImage(tools ?? []);
+      const shape = { image, cpus: CPUS, memory: MEMORY };
       const name = containerName(machineId);
       const port = await serial(async () => {
         await docker(["rm", "-f", name]).catch(() => {});

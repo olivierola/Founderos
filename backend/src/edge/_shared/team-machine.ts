@@ -81,7 +81,7 @@ export interface MachineProvisioner {
   /** Prêt à créer ? Sinon la raison, à montrer telle quelle. */
   check(): Promise<{ ok: true } | { ok: false; reason: string }>;
   /** Lance la machine et attend qu'elle réponde. Le jeton ne passe jamais par un argument de commande. */
-  create(input: { machineId: string; token: string; allowApt: boolean; /** Un modèle du catalogue (machines/catalog.ts). */ template?: string | null }): Promise<{ ref: string; url: string }>;
+  create(input: { machineId: string; token: string; allowApt: boolean; /** Les outils du catalogue (machines/catalog.ts). */ tools?: string[] }): Promise<{ ref: string; url: string }>;
   /** Relance le même conteneur avec d'autres réglages (mêmes volumes, même port, même jeton). */
   reconfigure(input: { ref: string; token: string; allowApt: boolean }): Promise<void>;
   /** Arrête et supprime le conteneur ; ses volumes (les dossiers des équipes) aussi si demandé. */

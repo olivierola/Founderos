@@ -14,7 +14,7 @@
 
 import { TextReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
 import type { EmbeddedConfig, EmbeddedManifest } from "./manifest.ts";
-import { templateById, templateLayer } from "../machines/catalog.ts";
+import { resolveTools, selectionLayer } from "../machines/catalog.ts";
 
 export const RUNTIME_IMAGE = "founderos/agent-runtime";
 
@@ -41,8 +41,8 @@ export function dockerfile(manifest: EmbeddedManifest, config: EmbeddedConfig): 
     `ARG RUNTIME_IMAGE=${RUNTIME_IMAGE}:${config.runtime_version}`,
     "FROM ${RUNTIME_IMAGE}",
     "USER root",
-    // La machine du catalogue d'abord (les outils de son métier), puis les paquets propres à l'agent.
-    ...(templateById(m.template) ? [`# Machine du catalogue : ${templateById(m.template)!.name}`, ...templateLayer(templateById(m.template)!)] : []),
+    // Les outils du catalogue d'abord, puis les paquets propres à l'agent.
+    ...(m.catalog_tools.length ? [`# Outils du catalogue : ${resolveTools(m.catalog_tools).map((t) => t.name).join(", ")}`, ...selectionLayer(m.catalog_tools)] : []),
     ...(m.apt.length ? [`RUN apt-get update && apt-get install -y --no-install-recommends ${shellList(m.apt)} && rm -rf /var/lib/apt/lists/*`] : []),
     ...(m.pip.length ? [`RUN pip3 install --no-cache-dir --break-system-packages ${shellList(m.pip)}`] : []),
     ...(m.npm.length ? [`RUN npm install -g ${shellList(m.npm)}`] : []),

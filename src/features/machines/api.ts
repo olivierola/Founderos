@@ -45,31 +45,43 @@ export interface FleetMachine {
   managed_by?: "docker" | null;
   managed_ref?: string | null;
   provision_state?: "creating" | "ready" | "failed" | null;
-  /** 0317 : le modèle du catalogue dont elle est faite (null : machine d'équipe de base). */
+  /** 0317 : le preset du catalogue choisi au départ (pour l'affichage). */
   template?: string | null;
+  /** 0318 : les outils du catalogue installés dans l'image. */
+  tools?: string[];
 }
 
-/** Le catalogue des machines taillées par métier (backend/src/machines/catalog.ts). */
-export interface MachineCategory { id: string; label: string; summary: string }
-export interface MachineTemplate {
+/** Le catalogue des outils des machines (backend/src/machines/catalog.ts). */
+export interface ToolCategory { id: string; label: string; summary: string }
+export interface MachineTool {
   id: string;
   category: string;
   name: string;
   summary: string;
-  highlights: string[];
   apt: string[];
   pip: string[];
   npm: string[];
+  note?: string;
+}
+export interface MachinePreset {
+  id: string;
+  category: string;
+  name: string;
+  summary: string;
+  tools: string[];
   cpus: number;
   memory_mb: number;
   disk_mb: number;
-  note?: string;
 }
-export interface MachineCatalog { categories: MachineCategory[]; templates: MachineTemplate[] }
+export interface MachineCatalog { categories: ToolCategory[]; tools: MachineTool[]; presets: MachinePreset[] }
+
+/** Le compte des paquets d'un outil, « 3 apt · 2 pip ». */
+export const toolCount = (t: Pick<MachineTool, "apt" | "pip" | "npm">) =>
+  ([["apt", t.apt], ["pip", t.pip], ["npm", t.npm]] as const).filter(([, xs]) => xs.length).map(([k, xs]) => `${xs.length} ${k}`).join(" · ");
 
 /** « 4 CPU · 8 Go · 16 Go de disque » */
-export const templateShape = (t: Pick<MachineTemplate, "cpus" | "memory_mb" | "disk_mb">) =>
-  `${t.cpus} CPU · ${Math.round(t.memory_mb / 1024)} Go · ${Math.round(t.disk_mb / 1024)} Go de disque`;
+export const presetShape = (p: Pick<MachinePreset, "cpus" | "memory_mb" | "disk_mb">) =>
+  `${p.cpus} CPU · ${Math.round(p.memory_mb / 1024)} Go · ${Math.round(p.disk_mb / 1024)} Go de disque`;
 
 export interface Assignment {
   team_id: string;
@@ -198,7 +210,7 @@ export const fleetApi = {
   remove: (machineId: string, destroy?: boolean | "all") =>
     callEdge<Res>("machines", { action: "delete", machine_id: machineId, ...(destroy ? { destroy } : {}) }),
   /** Faire créer une machine par la plateforme (0311). */
-  provision: (dashboardId: string, input: { name: string; description?: string; allow_system_packages?: boolean; template?: string }) =>
+  provision: (dashboardId: string, input: { name: string; description?: string; allow_system_packages?: boolean; preset?: string; tools?: string[] }) =>
     callEdge<Res & { machine: FleetMachine; probe: Probe }>("machines", { action: "create", dashboard_id: dashboardId, provision: true, ...input }),
   probe: (machineId: string) => callEdge<Res & { probe: Probe }>("machines", { action: "probe", machine_id: machineId }),
   assign: (dashboardId: string, target: { type: "team" | "agent"; id: string }, machineId: string | null) =>

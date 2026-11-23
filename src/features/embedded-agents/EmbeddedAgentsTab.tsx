@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   PlusIcon, PackageIcon, KeyIcon, DownloadSimpleIcon, PlayIcon, PauseIcon, StopIcon, ArrowsClockwiseIcon,
   CpuIcon, GlobeIcon, CopyIcon, TrashIcon, TerminalWindowIcon, DatabaseIcon, FloppyDiskIcon, ArrowSquareOutIcon, UploadSimpleIcon,
-  CircleNotchIcon as Loader2,
+  WarningIcon, CircleNotchIcon as Loader2,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,7 @@ import {
   downloadBase64, embeddedApi, isLive, useEmbeddedAgents, useRefreshEmbedded,
   type EmbeddedAgent, type EmbeddedConfig, type EmbeddedList, type SeedFile,
 } from "./api";
-import { templateShape, type MachineTemplate } from "@/features/machines/api";
+import type { MachineCatalog } from "@/features/machines/api";
 
 /**
  * Les agents embarqués du service (0316) : la troisième sorte d'agent, à côté
@@ -30,16 +30,19 @@ export function EmbeddedAgentsTab({ dashboardId, base }: { dashboardId: string; 
   const { data, isLoading } = useEmbeddedAgents(dashboardId);
   const [params, setParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
-  const [startTemplate, setStartTemplate] = useState<string | null>(null);
+  const [startTools, setStartTools] = useState<string[]>([]);
+  const [startPreset, setStartPreset] = useState<string | null>(null);
   // « Agent embarqué » depuis le menu des collaborateurs arrive ici avec ?new=1 ;
-  // depuis le catalogue des machines, avec ?template= en plus.
+  // depuis le composeur de machine, avec ?tools= (et parfois ?preset=) en plus.
   useEffect(() => {
     if (params.get("new") !== "1") return;
-    setStartTemplate(params.get("template"));
+    setStartTools((params.get("tools") ?? "").split(",").map((t) => t.trim()).filter(Boolean));
+    setStartPreset(params.get("preset"));
     setCreating(true);
     const next = new URLSearchParams(params);
     next.delete("new");
-    next.delete("template");
+    next.delete("tools");
+    next.delete("preset");
     setParams(next, { replace: true });
   }, [params, setParams]);
   const agents = data?.agents ?? [];
@@ -90,8 +93,8 @@ export function EmbeddedAgentsTab({ dashboardId, base }: { dashboardId: string; 
           {selected && data && <AgentPanel key={selected.id} agent={selected} data={data} dashboardId={dashboardId} base={base} />}
         </div>
       )}
-      <CreateDialog open={creating} onOpenChange={(v) => { setCreating(v); if (!v) setStartTemplate(null); }} dashboardId={dashboardId} onCreated={select}
-        templates={data?.catalog?.templates ?? []} initialTemplate={startTemplate} />
+      <CreateDialog open={creating} onOpenChange={(v) => { setCreating(v); if (!v) { setStartTools([]); setStartPreset(null); } }} dashboardId={dashboardId} onCreated={select}
+        catalog={data?.catalog ?? null} initialTools={startTools} initialPreset={startPreset} />
     </PageShell>
   );
 }
@@ -110,28 +113,30 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
   );
 }
 
-function CreateDialog({ open, onOpenChange, dashboardId, onCreated, templates, initialTemplate }: {
+function CreateDialog({ open, onOpenChange, dashboardId, onCreated, catalog, initialTools, initialPreset }: {
   open: boolean; onOpenChange: (v: boolean) => void; dashboardId: string; onCreated: (id: string) => void;
-  templates: MachineTemplate[]; initialTemplate: string | null;
+  catalog: MachineCatalog | null; initialTools: string[]; initialPreset: string | null;
 }) {
   const toast = useToast();
   const refresh = useRefreshEmbedded(dashboardId);
   const [name, setName] = useState("");
   const [persona, setPersona] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [template, setTemplate] = useState("");
+  const [tools, setTools] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     if (!open) return;
     setName(""); setPersona(""); setInstructions("");
-    setTemplate(initialTemplate && templates.some((t) => t.id === initialTemplate) ? initialTemplate : "");
-  }, [open, initialTemplate, templates]);
+    const valid = new Set((catalog?.tools ?? []).map((t) => t.id));
+    const preset = catalog?.presets.find((p) => p.id === initialPreset);
+    setTools([...new Set([...(preset?.tools ?? []), ...initialTools])].filter((t) => valid.has(t)));
+  }, [open, initialTools, initialPreset, catalog]);
   const submit = async () => {
     setSaving(true);
     try {
       const r = await embeddedApi.create(dashboardId, {
         name: name.trim(), persona: persona.trim() || undefined, instructions: instructions.trim() || undefined,
-        machine_template: template || undefined,
+        tools: tools.length ? tools : undefined,
       });
       await refresh();
       onOpenChange(false);
@@ -154,7 +159,7 @@ function CreateDialog({ open, onOpenChange, dashboardId, onCreated, templates, i
           <Field label="Nom"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ex. Agent ERP du site de Lyon" /></Field>
           <Field label="Rôle"><Input value={persona} onChange={(e) => setPersona(e.target.value)} placeholder="ex. Assistant d'exploitation de l'ERP" /></Field>
           <Field label="Consignes"><Textarea rows={5} value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="Ce qu'il fait, ce qu'il ne fait jamais, à qui il rend compte" /></Field>
-          <Field label="Sa machine"><TemplateSelect templates={templates} value={template} onChange={setTemplate} /></Field>
+          <Field label="Ses outils"><ToolPicker catalog={catalog} value={tools} onChange={setTools} /></Field>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Annuler</Button>
@@ -219,7 +224,7 @@ function AgentPanel({ agent, data, dashboardId, base }: { agent: EmbeddedAgent; 
     sync_level: draft.sync_level, knowledge_snapshot: draft.knowledge_snapshot, shell_enabled: draft.shell_enabled,
     cpus: Number(draft.cpus), memory_mb: Number(draft.memory_mb), disk_mb: Number(draft.disk_mb),
     apt_packages: splitList(lists.apt), pip_packages: splitList(lists.pip), npm_packages: splitList(lists.npm), egress: splitList(lists.egress),
-    seed_files: draft.seed_files, runtime_version: draft.runtime_version, machine_template: draft.machine_template ?? null,
+    seed_files: draft.seed_files, runtime_version: draft.runtime_version, tools: draft.tools ?? [],
   }), "Réglages enregistrés");
   const exportZip = () => act("export", async () => {
     const r = await embeddedApi.export(agent.id);
@@ -239,12 +244,8 @@ function AgentPanel({ agent, data, dashboardId, base }: { agent: EmbeddedAgent; 
       </div>
 
       <Card title="La machine" icon={CpuIcon} hint="Le conteneur de l'agent : ses ressources, son shell, ce qu'on y installe et ce qu'on y dépose.">
-        <Field label="Machine du catalogue">
-          <TemplateSelect templates={data.catalog?.templates ?? []} value={draft.machine_template ?? ""} onChange={(id) => {
-            const t = (data.catalog?.templates ?? []).find((x) => x.id === id);
-            // Choisir une machine reprend ses ressources ; on peut ensuite les ajuster.
-            setDraft({ ...draft, machine_template: id || null, ...(t ? { cpus: t.cpus, memory_mb: t.memory_mb, disk_mb: t.disk_mb } : {}) });
-          }} />
+        <Field label="Outils du catalogue">
+          <ToolPicker catalog={data.catalog ?? null} value={draft.tools ?? []} onChange={(ids) => set("tools", ids)} />
         </Field>
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label="Processeurs"><Input type="number" min={0.5} step={0.5} value={draft.cpus} onChange={(e) => set("cpus", Number(e.target.value))} /></Field>
@@ -547,29 +548,62 @@ function IconBtn({ label, icon: Icon, onClick }: { label: string; icon: typeof P
   );
 }
 
-const CATEGORY_LABEL: Record<string, string> = {
-  cyber: "Cybersécurité", data: "Data", dev: "Développement", ia: "IA et ML", web: "Web et collecte", ops: "Ops et cloud", docs: "Documents",
-};
-
-/** Une machine du catalogue (onglet Machines, Catalogue) : ses outils entrent dans le conteneur de l'agent. */
-function TemplateSelect({ templates, value, onChange }: { templates: MachineTemplate[]; value: string; onChange: (id: string) => void }) {
-  const groups = [...new Set(templates.map((t) => t.category))];
-  const current = templates.find((t) => t.id === value) ?? null;
+/**
+ * Choisir les outils du catalogue mis dans le conteneur, par catégorie, avec
+ * des sélections toutes faites (presets). Le catalogue complet est dans l'onglet
+ * Machines (Composer une machine).
+ */
+function ToolPicker({ catalog, value, onChange }: { catalog: MachineCatalog | null; value: string[]; onChange: (ids: string[]) => void }) {
+  const [open, setOpen] = useState(false);
+  if (!catalog) return <p className="text-[13px] text-muted-foreground">Le catalogue n'est pas disponible sur ce serveur.</p>;
+  const label = (id: string) => catalog.tools.find((t) => t.id === id)?.name ?? id;
+  const toggle = (id: string) => onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
+  const chosen = value.filter((id) => catalog.tools.some((t) => t.id === id));
   return (
-    <div className="space-y-1">
-      <select value={value} onChange={(e) => onChange(e.target.value)}
-        className="h-9 w-full rounded-md border border-input bg-background px-3 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <option value="">Machine de base (Node, Python, shell)</option>
-        {groups.map((g) => (
-          <optgroup key={g} label={CATEGORY_LABEL[g] ?? g}>
-            {templates.filter((t) => t.category === g).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </optgroup>
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {catalog.presets.map((p) => (
+          <button key={p.id} type="button" onClick={() => onChange([...new Set(p.tools)])} title={p.summary}
+            className="rounded-full border border-border px-2.5 py-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground">
+            {p.name}
+          </button>
         ))}
-      </select>
-      {current && (
-        <p className="text-[12px] text-muted-foreground">
-          {current.highlights.join(", ")} · <span className="font-mono">{templateShape(current)}</span>
-        </p>
+      </div>
+      {chosen.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {chosen.map((id) => (
+            <button key={id} type="button" onClick={() => toggle(id)} title="Retirer"
+              className="rounded-md bg-muted px-1.5 py-0.5 text-[11.5px] hover:bg-muted/70">{label(id)} ✕</button>
+          ))}
+        </div>
+      )}
+      <button type="button" onClick={() => setOpen(!open)} className="text-[12px] text-muted-foreground underline-offset-2 hover:underline">
+        {open ? "Masquer les outils" : chosen.length ? "Modifier les outils" : "Choisir des outils"}
+      </button>
+      {open && (
+        <div className="max-h-72 space-y-3 overflow-y-auto rounded-lg border border-border p-3">
+          {catalog.categories.map((c) => {
+            const items = catalog.tools.filter((t) => t.category === c.id);
+            if (!items.length) return null;
+            return (
+              <div key={c.id} className="space-y-1">
+                <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{c.label}</div>
+                {items.map((t) => (
+                  <label key={t.id} className="flex cursor-pointer items-start gap-2 rounded-md px-1.5 py-1 hover:bg-muted/40">
+                    <input type="checkbox" checked={value.includes(t.id)} onChange={() => toggle(t.id)} className="mt-0.5" />
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-1.5 text-[13px]">{t.name}{t.note && <WarningIcon className="h-3.5 w-3.5 text-amber-600" />}</span>
+                      <span className="block text-[11.5px] text-muted-foreground">{t.summary}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {chosen.some((id) => catalog.tools.find((t) => t.id === id)?.category === "netsec") && (
+        <p className="text-[12px] text-amber-700 dark:text-amber-400">Les outils d'audit réseau ne s'utilisent que sur des systèmes que vous êtes autorisé à tester.</p>
       )}
     </div>
   );
