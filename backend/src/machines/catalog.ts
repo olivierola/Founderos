@@ -88,6 +88,58 @@ export const TOOLS: Tool[] = [
   // ── Audit réseau (autorisé) ──
   { id: "netsec-recon", category: "netsec", name: "Cartographie réseau", summary: "Ports, services, DNS, sous-domaines : nmap, dnsutils, whois.", apt: ["nmap", "whois", "dnsutils", "netcat-openbsd", "traceroute"], pip: ["dnspython"], npm: [], note: "À n'utiliser que sur des systèmes que vous êtes autorisé à tester." },
   { id: "netsec-webaudit", category: "netsec", name: "Audit d'application web", summary: "Scanner de configuration et de contenu : nikto, gobuster.", apt: ["nikto", "gobuster"], pip: ["requests", "httpx"], npm: [], note: "À n'utiliser que dans le cadre d'une mission autorisée." },
+
+  // ── Développement (suite) ──
+  { id: "dev-cpp", category: "dev", name: "C et C++", summary: "cmake, clang, gdb, valgrind.", apt: ["cmake", "clang", "gdb", "valgrind"], pip: [], npm: [] },
+  { id: "dev-php", category: "dev", name: "PHP et Composer", summary: "PHP en ligne de commande et Composer.", apt: ["php-cli", "php-curl", "php-mbstring", "php-xml", "composer"], pip: [], npm: [] },
+  { id: "dev-ruby", category: "dev", name: "Ruby", summary: "Ruby, ses en-têtes et Bundler.", apt: ["ruby", "ruby-dev", "bundler"], pip: [], npm: [] },
+  { id: "dev-containers", category: "dev", name: "Images de conteneurs", summary: "Construire et copier des images sans démon : buildah, skopeo.", apt: ["buildah", "skopeo"], pip: [], npm: [] },
+  { id: "dev-proto", category: "dev", name: "Protocol Buffers et gRPC", summary: "Le compilateur protobuf et les outils gRPC Python.", apt: ["protobuf-compiler"], pip: ["grpcio-tools"], npm: [] },
+  { id: "dev-shell", category: "dev", name: "Scripts shell", summary: "Analyse statique de scripts : shellcheck.", apt: ["shellcheck"], pip: [], npm: [] },
+
+  // ── Data (suite) ──
+  { id: "data-viz", category: "data", name: "Visualisation", summary: "Graphiques riches : plotly, altair, bokeh.", apt: [], pip: ["plotly", "altair", "bokeh", "kaleido"], npm: [] },
+  { id: "data-bigdata", category: "data", name: "Gros volumes", summary: "Traitement distribué : PySpark et Dask.", apt: [], pip: ["pyspark", "dask[complete]"], npm: [], note: "PySpark a besoin d'un Java (outil « Java et Maven »)." },
+  { id: "data-geo", category: "data", name: "Données géospatiales", summary: "Cartes et géométries : geopandas, shapely, folium.", apt: [], pip: ["geopandas", "shapely", "folium", "pyproj"], npm: [] },
+  { id: "data-formats", category: "data", name: "Fichiers tabulaires", summary: "Manipuler CSV, TSV et tableaux en ligne de commande.", apt: ["miller"], pip: ["csvkit", "visidata"], npm: [] },
+
+  // ── IA et ML (suite) ──
+  { id: "ia-deep", category: "ia", name: "Apprentissage profond (CPU)", summary: "PyTorch et torchvision, sur processeur.", apt: [], pip: ["torch", "torchvision"], npm: [], note: "Image lourde ; sur processeur, sans carte graphique." },
+  { id: "ia-nlp", category: "ia", name: "Traitement du langage", summary: "transformers, sentence-transformers, spaCy.", apt: [], pip: ["transformers", "sentence-transformers", "spacy"], npm: [], note: "Les modèles se téléchargent au premier usage." },
+  { id: "ia-llm", category: "ia", name: "Applications LLM", summary: "LangChain et les SDK des fournisseurs.", apt: [], pip: ["langchain", "langchain-community", "openai", "anthropic", "tiktoken"], npm: [] },
+  { id: "ia-cv", category: "ia", name: "Vision par ordinateur", summary: "OpenCV (sans écran), scikit-image, Pillow.", apt: [], pip: ["opencv-python-headless", "scikit-image", "pillow"], npm: [] },
+  { id: "ia-vector", category: "ia", name: "Bases vectorielles", summary: "Recherche de similarité : FAISS, Chroma.", apt: [], pip: ["faiss-cpu", "chromadb"], npm: [] },
+
+  // ── Web et collecte (suite) ──
+  { id: "web-automation", category: "web", name: "Navigation pilotée", summary: "Playwright et Selenium (Python).", apt: [], pip: ["playwright", "selenium"], npm: [], note: "Les navigateurs s'installent au premier usage (playwright install)." },
+  { id: "web-download", category: "web", name: "Téléchargement de médias", summary: "yt-dlp et gallery-dl.", apt: ["yt-dlp"], pip: ["gallery-dl"], npm: [], note: "Respectez les conditions d'utilisation et les droits des contenus." },
+  { id: "web-http", category: "web", name: "Appels HTTP", summary: "HTTPie en ligne de commande.", apt: ["httpie"], pip: [], npm: [] },
+
+  // ── Ops et cloud (suite) ──
+  { id: "ops-azure", category: "ops", name: "Azure", summary: "L'interface en ligne de commande Azure.", apt: [], pip: ["azure-cli"], npm: [] },
+  { id: "ops-gcp", category: "ops", name: "Google Cloud (stockage)", summary: "gsutil et la bibliothèque de stockage.", apt: [], pip: ["gsutil", "google-cloud-storage"], npm: [] },
+  { id: "ops-db-tui", category: "ops", name: "Consoles de bases", summary: "pgcli, mycli, litecli, avec complétion.", apt: [], pip: ["pgcli", "mycli", "litecli"], npm: [] },
+  { id: "ops-shell", category: "ops", name: "Confort du terminal", summary: "tmux, htop, ncdu.", apt: ["tmux", "htop", "ncdu"], pip: [], npm: [] },
+  { id: "ops-serve", category: "ops", name: "Servir un dossier", summary: "Un petit serveur HTTP statique.", apt: [], pip: [], npm: ["http-server", "serve"] },
+
+  // ── Documents (suite) ──
+  { id: "docs-latex", category: "docs", name: "LaTeX", summary: "Composer des PDF avec LaTeX (XeLaTeX, latexmk).", apt: ["texlive-latex-recommended", "texlive-fonts-recommended", "texlive-xetex", "latexmk"], pip: [], npm: [], note: "Image lourde." },
+  { id: "docs-images", category: "docs", name: "Traitement d'images", summary: "ImageMagick et optimisation (PNG, JPEG, WebP).", apt: ["imagemagick", "optipng", "jpegoptim", "webp"], pip: [], npm: [] },
+  { id: "docs-diagrams", category: "docs", name: "Diagrammes", summary: "Graphviz et Mermaid en ligne de commande.", apt: ["graphviz"], pip: [], npm: ["@mermaid-js/mermaid-cli"], note: "Mermaid rend avec le Chromium de la machine de base." },
+  { id: "docs-markdown", category: "docs", name: "Markdown", summary: "Vérifier et rendre du Markdown.", apt: [], pip: [], npm: ["markdownlint-cli", "markdown-it"] },
+
+  // ── Sécurité défensive (suite) ──
+  { id: "defsec-secrets", category: "defsec", name: "Recherche de secrets", summary: "Repérer des secrets commis par erreur.", apt: [], pip: ["detect-secrets"], npm: [] },
+  { id: "defsec-crypto", category: "defsec", name: "Chiffrement et signatures", summary: "GnuPG, OpenSSL et les bibliothèques Python.", apt: ["gnupg", "openssl"], pip: ["cryptography", "pyOpenSSL"], npm: [] },
+  { id: "defsec-av", category: "defsec", name: "Analyse antivirus", summary: "ClamAV et empreintes floues (ssdeep).", apt: ["clamav", "ssdeep"], pip: [], npm: [], note: "La base de signatures se met à jour au premier usage (freshclam)." },
+  { id: "defsec-netmon", category: "defsec", name: "Surveillance réseau", summary: "Détection et inspection : Suricata, ngrep, tcpflow.", apt: ["suricata", "ngrep", "tcpflow"], pip: [], npm: [] },
+  { id: "defsec-hardening", category: "defsec", name: "Durcissement et audit système", summary: "Lynis, AIDE, auditd.", apt: ["lynis", "aide", "auditd"], pip: [], npm: [] },
+  { id: "defsec-iac", category: "defsec", name: "Audit d'infrastructure", summary: "Analyser Terraform, Kubernetes et Dockerfile (Checkov).", apt: [], pip: ["checkov"], npm: [] },
+  { id: "defsec-intel", category: "defsec", name: "Renseignement sur les menaces", summary: "STIX, TAXII et MISP.", apt: [], pip: ["stix2", "taxii2-client", "pymisp"], npm: [] },
+
+  // ── Audit réseau (autorisé, suite) ──
+  { id: "netsec-tls", category: "netsec", name: "Posture TLS", summary: "Vérifier les configurations TLS/SSL : sslscan.", apt: ["sslscan"], pip: [], npm: [], note: "À n'utiliser que sur des systèmes que vous êtes autorisé à tester." },
+  { id: "netsec-smb", category: "netsec", name: "Partages SMB", summary: "Inventorier des partages de fichiers Windows.", apt: ["smbclient"], pip: [], npm: [], note: "À n'utiliser que sur des systèmes que vous êtes autorisé à inventorier." },
 ];
 
 export interface MachinePreset {
@@ -112,7 +164,16 @@ export const PRESETS: MachinePreset[] = [
   { id: "preset-docs", category: "docs", name: "Documents et OCR", summary: "Conversion, OCR, lecture de PDF.", tools: ["docs-convert", "docs-ocr"], cpus: 2, memory_mb: 4096, disk_mb: 16384 },
   { id: "preset-blueteam", category: "defsec", name: "Réponse à incident", summary: "Analyse de fichiers, mémoire, captures et journaux.", tools: ["defsec-dfir", "defsec-memory", "defsec-capture", "defsec-logs"], cpus: 2, memory_mb: 6144, disk_mb: 24576 },
   { id: "preset-appsec", category: "defsec", name: "Sécurité applicative", summary: "Audit de code et de dépendances.", tools: ["defsec-sast", "defsec-deps", "dev-python"], cpus: 2, memory_mb: 4096, disk_mb: 16384 },
-  { id: "preset-recon", category: "netsec", name: "Audit réseau (autorisé)", summary: "Cartographie et audit web d'un périmètre autorisé.", tools: ["netsec-recon", "netsec-webaudit"], cpus: 2, memory_mb: 2048, disk_mb: 8192 },
+  { id: "preset-recon", category: "netsec", name: "Audit réseau (autorisé)", summary: "Cartographie et audit web d'un périmètre autorisé.", tools: ["netsec-recon", "netsec-webaudit", "netsec-tls"], cpus: 2, memory_mb: 2048, disk_mb: 8192 },
+  { id: "preset-fullstack", category: "dev", name: "Développeur full-stack", summary: "Node, Python, C/C++ et clients de bases.", tools: ["dev-node", "dev-python", "dev-cpp", "dev-db-clients"], cpus: 4, memory_mb: 8192, disk_mb: 24576 },
+  { id: "preset-deep", category: "ia", name: "Apprentissage profond", summary: "PyTorch, NLP et notebooks (processeur).", tools: ["ia-deep", "ia-nlp", "ia-notebooks", "data-analysis"], cpus: 8, memory_mb: 16384, disk_mb: 49152 },
+  { id: "preset-llm", category: "ia", name: "Applications LLM", summary: "LangChain, bases vectorielles et notebooks.", tools: ["ia-llm", "ia-vector", "ia-notebooks"], cpus: 4, memory_mb: 8192, disk_mb: 24576 },
+  { id: "preset-geo", category: "data", name: "Data géospatiale", summary: "Cartes, géométries et analyse.", tools: ["data-geo", "data-analysis", "ia-notebooks"], cpus: 4, memory_mb: 8192, disk_mb: 24576 },
+  { id: "preset-collect", category: "web", name: "Collecte et veille web", summary: "Extraction, navigation pilotée et HTTP.", tools: ["web-scraping", "web-automation", "web-http"], cpus: 2, memory_mb: 4096, disk_mb: 16384 },
+  { id: "preset-publishing", category: "docs", name: "Édition et PDF", summary: "Conversion, LaTeX, images et diagrammes.", tools: ["docs-convert", "docs-latex", "docs-images", "docs-diagrams"], cpus: 2, memory_mb: 4096, disk_mb: 32768 },
+  { id: "preset-threat-hunting", category: "defsec", name: "Chasse aux menaces", summary: "Fichiers, surveillance réseau, journaux, renseignement.", tools: ["defsec-dfir", "defsec-netmon", "defsec-logs", "defsec-intel"], cpus: 4, memory_mb: 8192, disk_mb: 32768 },
+  { id: "preset-hardening", category: "defsec", name: "Durcissement", summary: "Audit système, chiffrement, antivirus.", tools: ["defsec-hardening", "defsec-crypto", "defsec-av"], cpus: 2, memory_mb: 4096, disk_mb: 16384 },
+  { id: "preset-secreview", category: "defsec", name: "Revue de sécurité du code", summary: "Code, dépendances, secrets et infrastructure.", tools: ["defsec-sast", "defsec-deps", "defsec-secrets", "defsec-iac"], cpus: 2, memory_mb: 4096, disk_mb: 16384 },
 ];
 
 export const toolById = (id: string | null | undefined): Tool | null => (id ? TOOLS.find((t) => t.id === id) : null) ?? null;
