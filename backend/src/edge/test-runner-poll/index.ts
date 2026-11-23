@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/test-runner-poll/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno, FUNCTIONS_URL, defineHandler } from "../../compat/index.ts";
 
 // test-runner-poll — the single endpoint the Playwright test runner talks to.
@@ -751,7 +749,7 @@ export default defineHandler(async (req) => {
           .in("conversation_id", convIds).eq("status", "pending").gt("requested_at", since).limit(10),
         admin.from("internal_agents")
           .select("id, name, accent_color, avatar_url, service_dashboard_id, project_id").in("id", agentIds),
-        admin.from("internal_agent_run_state").select("conversation_id").in("conversation_id", convIds),
+        admin.from("internal_agent_runs").select("conversation_id").in("conversation_id", convIds).eq("status", "running"),
       ]);
       const agentById = new Map(((agents ?? []) as Array<{ id: string; name: string; accent_color: string | null; avatar_url: string | null; service_dashboard_id: string | null; project_id: string }>).map((a) => [a.id, a]));
       const busy = new Set(((running ?? []) as Array<{ conversation_id: string }>).map((r) => r.conversation_id));

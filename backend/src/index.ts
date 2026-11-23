@@ -33,9 +33,8 @@ const platform = env.platform
 const machineProvisioning = !!platform && process.env.MACHINE_PROVISIONER !== "0";
 if (machineProvisioning) installMachineProvisioner(dockerMachineProvisioner());
 
-// Le harnais OpenCode (PLATFORM=self et HARNESS_OPENCODE=1) : démarré avant
-// l'écoute, il reprend aussitôt les sessions qu'un arrêt a laissées en cours.
-// Ses modules ne sont chargés que dans ce cas.
+// Le harnais OpenCode, moteur des agents : démarré avant l'écoute, il reprend
+// aussitôt les sessions qu'un arrêt a laissées en cours.
 if (env.harness) {
   const started = Date.now();
   // Le pont et les agents lisent et écrivent dans la base de ce backend (client

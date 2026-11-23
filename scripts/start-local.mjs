@@ -5,7 +5,7 @@
 //
 //   npm run dev:local                       tout préparer puis démarrer
 //   npm run dev:local -- --import "<URL>"   copier d'abord une base Supabase
-//   npm run dev:local -- --no-harness       sans le harnais OpenCode
+//   npm run dev:local -- --no-harness       sans le moteur d'agents (API seule)
 //   npm run dev:local -- --backend-only     sans le front
 //   npm run dev:local -- --setup-only       préparer sans démarrer
 //   npm run dev:local -- --skip-install     ne pas vérifier les dépendances
@@ -132,7 +132,7 @@ if (Object.keys(fixes).length) setEnv(ENV_SELF, fixes);
 env = parseEnv(readFileSync(ENV_SELF, "utf8"));
 const backendUrl = (env.FUNCTIONS_URL || `http://localhost:${env.PORT || 8787}`).replace(/\/$/, "");
 console.log(`  base : ${env.DATABASE_URL}`);
-console.log(`  harnais OpenCode : ${env.HARNESS_OPENCODE === "1" ? "activé" : "désactivé"}`);
+console.log(`  moteur d'agents (harnais OpenCode) : ${env.HARNESS_OPENCODE === "0" ? "éteint (--no-harness)" : "démarré"}`);
 // ── Les machines des équipes d'agents ──
 // Elles se créent à la demande depuis l'onglet Machines (un conteneur par
 // machine, avec son adresse et son jeton) : plus de machine partagée posée par

@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/internal-agent-a2a/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno, FUNCTIONS_URL, defineHandler } from "../../compat/index.ts";
 
 // internal-agent-a2a — make an agent react autonomously to a peer's message.
@@ -22,15 +20,9 @@ import { Deno, FUNCTIONS_URL, defineHandler } from "../../compat/index.ts";
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
-import { callAi, callAiWithTools, type ChatMessage } from "../_shared/ai.ts";
+import { callAi } from "../_shared/ai.ts";
 import { requireWorkspaceMember } from "../_shared/authz.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
-import { normalizeAutonomy } from "../_shared/policyguard.ts";
-import { insertArtifact, generateArtifactImage, isDocKind } from "../_shared/artifact-content.ts";
-import {
-  buildInternalToolset, type AgentToolRow, type InternalToolContext,
-} from "../_shared/internal-agent-tools.ts";
-import { applyPoolToToolRows, loadPoolScope } from "../_shared/resource-pools.ts";
 import { advanceMission, launchMission, resumeMission, retryMission, startMissionPlanning } from "../_shared/mission-planning.ts";
 import { distillLessons } from "../_shared/team-life.ts";
 import {
@@ -129,61 +121,6 @@ export default defineHandler(async (req) => {
       .limit(10);
     const teamMemSection = (teamMem ?? []).map((m: any) => `- [${m.kind}] ${m.content}`).join("\n");
 
-    const ctx: InternalToolContext = {
-      admin,
-      workspaceId: a.workspace_id,
-      projectId: a.project_id,
-      agentId: a.id,
-      agentName: a.name,
-      collaborationEnabled: true,
-      // A message from a teammate does not widen what this collaborator may do
-      // alone (0266): same autonomy as everywhere else.
-      autonomy: normalizeAutonomy(a.autonomy_level),
-      serviceDashboardId: a.service_dashboard_id ?? null,
-      runId: null,
-      conversationId: null,
-      // Both used to be missing or empty here: create_artifact crashed on an
-      // undefined function, and create_deliverable answered « livré » while
-      // writing nothing. They now persist exactly like a chat turn does.
-      createDeliverable: async (d) => {
-        const { data: row, error } = await admin.from("internal_agent_deliverables").insert({
-          agent_id: a.id, kind: d.kind, name: d.name, content: d.content, summary: d.summary,
-        }).select("id").maybeSingle();
-        if (error || !row) throw new Error(`enregistrement impossible : ${error?.message ?? "aucune ligne écrite"}`);
-      },
-      createArtifact: async (art) => {
-        const scope = { workspaceId: a.workspace_id ?? null, projectId: a.project_id ?? null, createdBy: a.created_by ?? null, agentId: a.id };
-        if (art.kind === "image") {
-          if (!(await generateArtifactImage(admin, art.content, scope))) throw new Error("génération d'image indisponible");
-          return;
-        }
-        // Plain text has no store outside a thread: the reply itself carries it.
-        if (!isDocKind(art.kind)) return;
-        if (!(await insertArtifact(admin, art.kind, art.title, art.content, scope))) throw new Error("enregistrement du document impossible");
-      },
-      requestApproval: async (r) => {
-        // Mêmes champs que le run principal : demandeur, échéance et copie de la
-        // règle (0275, 0281). Sans eux, la base refusait une action en production.
-        const { data, error } = await admin.from("internal_agent_approvals").insert({
-          agent_id: a.id, workspace_id: a.workspace_id, project_id: a.project_id,
-          tool_name: r.tool_name, action_kind: r.action_kind, payload: r.payload, reason: r.reason,
-          ...(r.requested_by !== undefined ? { requested_by: r.requested_by } : {}),
-          ...(r.expires_at ? { expires_at: r.expires_at } : {}),
-          ...(r.policy ?? {}),
-        }).select("id").single();
-        if (error || !data) throw new Error(`Could not queue approval: ${error?.message ?? "no row"}`);
-        return (data as { id: string }).id;
-      },
-      logEvent: async () => {},
-      isCancelled: async () => false,
-    };
-
-    // Mode pools (0291) : une réponse à un collègue ne sort pas plus des pools
-    // qu'un run. Sans ce filtre, les lignes d'outils hors pools revenaient ici.
-    const poolScope = await loadPoolScope(admin, a.id);
-    ctx.poolScope = poolScope;
-    const rows = poolScope ? applyPoolToToolRows((tools ?? []) as AgentToolRow[], poolScope) as AgentToolRow[] : (tools ?? []) as AgentToolRow[];
-    const { defs, executor, capabilitySummary } = buildInternalToolset(rows, ctx);
     const senderName = (sender as any)?.name ?? "a teammate agent";
 
     // Un échange borné (0294) : idée, challenge ou débat. La consigne change, la
@@ -198,54 +135,33 @@ export default defineHandler(async (req) => {
     }
     const lastWord = exchange && turnsLeft !== null && turnsLeft <= 1;
 
-    const systemPrompt = exchange
-      ? `${exchangePrompt(a, senderName, kind, topic, lastWord ? "close" : "reply")}
-${teamMemSection ? `\nShared team memory:\n${teamMemSection}` : ""}
+    // La consigne propre à l'échange ; le reste (identité, outils de ses pools,
+    // garde-fous, mémoire d'équipe) est celui de l'agent sur le harnais.
+    const extraContext = exchange
+      ? `${exchangePrompt(a, senderName, kind, topic, lastWord ? "close" : "reply")}\n\nN'utilise un outil que si un fait précis renforce ton propos. Ta réplique est courte.`
+      : [
+        `Ton collègue ${senderName} t'a écrit. Réagis utilement et en autonomie :`,
+        "- si tu peux répondre ou aider directement, fais-le, brièvement ;",
+        "- utilise tes outils si besoin (recherche, données, délégation, mémoire d'équipe) ;",
+        "- si un autre agent est mieux placé, délègue-lui ;",
+        `- reste centré : ta réponse part telle quelle chez ${senderName}.`,
+      ].join("\n");
+    const thread = ((history ?? []) as Array<{ from_agent: string; content: string }>)
+      .map((h) => `[${h.from_agent === a.id ? "Toi" : senderName}] ${String(h.content ?? "").slice(0, 2000)}`);
+    const text = thread.length
+      ? `# L'échange avec ${senderName} (du plus ancien au plus récent)\n${thread.join("\n\n")}`
+      : String((msg as any).content ?? "");
 
-Your capabilities (use a tool only if a fact would sharpen your point):
-${capabilitySummary}`
-      : `You are ${a.persona || a.name}, an autonomous internal agent working as part of a TEAM.
-A teammate agent (${senderName}) has messaged you. React helpfully and autonomously:
-- If you can answer or help directly, do so concisely.
-- Use your tools (search, data, delegate, team_memory…) as needed.
-- If the request is better handled by yet another agent, delegate it.
-- Keep your reply focused — it goes straight to ${senderName}.
-${a.instructions ? `\nYour instructions:\n${a.instructions}` : ""}
-${teamMemSection ? `\nShared team memory:\n${teamMemSection}` : ""}
-
-Your capabilities:
-${capabilitySummary}`;
-
-    const messages: ChatMessage[] = [
-      { role: "system", content: systemPrompt },
-      ...(history ?? []).map((h: any) => ({
-        role: (h.from_agent === a.id ? "assistant" : "user") as "assistant" | "user",
-        content: h.content,
-      })),
-    ];
-
-    const provider = a.model === "deepseek" ? "deepseek" : "groq";
-    let result: Awaited<ReturnType<typeof callAiWithTools>> | null = null;
     let reply: string | undefined;
     try {
-      result = await callAiWithTools({
-        provider,
-        messages,
-        tools: defs,
-        executor,
-        temperature: exchange ? Math.max(a.temperature ?? 0.3, 0.6) : a.temperature ?? 0.3,
-        maxTokens: exchange ? 500 : 1200,
-        maxRounds: exchange ? 2 : Math.min(a.max_steps ?? 6, 5),
-      });
-      reply = result.content?.trim();
+      const { runAndWait } = await import("../../harness/runs.ts");
+      const out = await runAndWait({
+        agentId: a.id, kind: "a2a", text, extraContext, via: "a2a",
+        actingUserId: a.created_by ?? null, meta: { a2a: { message_id } },
+      }, exchange ? 5 * 60_000 : 15 * 60_000);
+      reply = out.text.trim();
     } catch (e) {
-      // Approval-gated tools throw to pause for a human decision — there's no
-      // human in an agent-to-agent exchange, so answer gracefully.
-      if ((e as { name?: string })?.name === "AwaitingApprovalError") {
-        reply = `Cette action (${(e as { summary?: string }).summary ?? "sensible"}) nécessite une approbation humaine — je ne peux pas l'exécuter dans un échange entre agents.`;
-      } else {
-        throw e;
-      }
+      reply = `Je n'ai pas pu traiter ta demande : ${(e instanceof Error ? e.message : String(e)).slice(0, 300)}`;
     }
     if (reply) {
       // Dans un échange borné, la réplique consomme un tour. La dernière naît
@@ -277,13 +193,7 @@ ${capabilitySummary}`;
       .update({ updated_at: new Date().toISOString() })
       .eq("id", (msg as any).thread_id);
 
-    if (result) {
-      await logLlmUsage({
-        workspace_id: a.workspace_id, project_id: a.project_id,
-        provider: result.provider, model: result.model,
-        task: "chat_simple", feature: "internal-agent-a2a", usage: result.usage,
-      });
-    }
+    // La consommation est comptée par le harnais, sur le run de l'échange.
 
     return jsonResponse({ ok: true, replied: !!reply });
   } catch (e) {

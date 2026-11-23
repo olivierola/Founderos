@@ -1,6 +1,4 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/rag-chat/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
-import { Deno, defineHandler } from "../../compat/index.ts";
+import { defineHandler } from "../../compat/index.ts";
 
 // rag-chat — answer a question using the agent's vectorized knowledge base.
 // Auth modes:
@@ -13,7 +11,7 @@ import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { callerIp, enforceRateLimit } from "../_shared/rate-limit.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
 import { embedTexts, toVectorLiteral } from "../_shared/jina.ts";
-import { callAi, callAiWithTools } from "../_shared/ai.ts";
+import { callAi } from "../_shared/ai.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
 import { loadPublicAgentTools } from "../_shared/public-agent-mcp.ts";
 import { judgeTurn, visitorContext } from "../_shared/public-agent-telemetry.ts";
@@ -259,24 +257,19 @@ ${context || "(no knowledge indexed yet)"}`;
     let model: string;
 
     if (hasTools) {
-      // DeepSeek handles native tool-calling reliably; Groq/Llama frequently
-      // emits malformed tool calls, and callAiWithTools defaults to Groq —
-      // whose llama-3.3-70b-versatile this project no longer has access to.
-      // Same preference as ai-agent-chat: DeepSeek when its key exists.
-      const toolProvider: "groq" | "deepseek" =
-        Deno.env.get("DEEPSEEK_API_KEY") ? "deepseek" : "groq";
-      const run = await callAiWithTools({
-        provider: toolProvider,
+      // Le tour du widget tourne sur le harnais (tour éphémère « rag ») : ses
+      // seuls outils sont ceux que le marchand a ouverts sur ses serveurs MCP.
+      const { callToolLoop } = await import("../../harness/ephemeral.ts");
+      const run = await callToolLoop("rag", {
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: String(message) },
         ],
         tools: mcp!.tools,
         executor: mcp!.executor,
-        // Bounded per agent: a widget turn must stay a chat turn, not a run.
+        // Borné par agent : un tour de widget reste un tour de chat, pas un run.
         maxRounds: Math.min(Math.max(Number(agent.max_tool_calls) || 4, 1), 10),
-        maxTokens: 900,
-        temperature: Number(agent.temperature ?? 0.3),
+        timeoutMs: 90_000,
       });
       answer = run.content;
       usage = run.usage;

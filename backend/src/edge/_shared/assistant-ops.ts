@@ -1,5 +1,4 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/assistant-ops.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
+import { launchMissionNow } from "./mission-launch.ts";
 import { Deno, FUNCTIONS_URL } from "../../compat/index.ts";
 
 // Ce que l'assistant sait FAIRE sur l'espace de travail, et pas seulement dire.
@@ -1387,16 +1386,11 @@ async function launchAgentOnIssue(
   if (brief && !issue.agent_brief) {
     await a.admin.from("pj_issues").update({ agent_brief: brief }).eq("id", issue.id);
   }
-  const base = Deno.env.get("SUPABASE_URL");
-  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (base && key) {
-    // Sans attendre : un run dure des minutes. En cas d'échec de l'appel,
-    // l'ordonnanceur reprend la mission active.
-    fetch(`${FUNCTIONS_URL}/functions/v1/internal-agent-run`, {
-      method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "mission", mission_id: (mission as { id: string }).id }),
-    }).catch(() => {});
-  }
+  // Le run en file, puis le lancement (sans attendre : un run dure des minutes).
+  await launchMissionNow(a.admin, {
+    missionId: (mission as { id: string }).id, agentId: agent.id,
+    workspaceId: project.workspace_id, projectId: project.project_id, triggeredBy: a.userId, via: "api",
+  });
   return `${agent.name} est au travail sur ${refOf(project, issue)} « ${issue.name} » (mission ${(mission as { id: string }).id}). Son livrable sera rattaché à l'item.`;
 }
 

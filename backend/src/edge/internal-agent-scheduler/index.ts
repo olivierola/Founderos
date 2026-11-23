@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/internal-agent-scheduler/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno, FUNCTIONS_URL, defineHandler } from "../../compat/index.ts";
 
 // internal-agent-scheduler — cron tick for autonomous agents.
@@ -283,21 +281,27 @@ export default defineHandler(async (req) => {
     if (await invokeWorker(r.agent_id, r.id)) report.rescued.push(r.id);
   }
 
-  // 3. Time out zombie running runs.
+  // 3. Les runs « en cours » que plus personne ne fait avancer. Un run du
+  //    harnais suivi par ce processus (sa session est attachée au pont) est
+  //    vivant, quelle que soit sa durée : son plafond de dépense l'arrête. Seuls
+  //    ceux que personne ne suit plus depuis 30 minutes sont clos.
   const timeoutBefore = new Date(now.getTime() - RUNNING_TIMEOUT_MS).toISOString();
   const { data: zombies } = await admin
     .from("internal_agent_runs")
-    .select("id, agent_id")
+    .select("id, agent_id, opencode_session_id")
     .eq("status", "running")
     .lt("started_at", timeoutBefore)
-    .limit(10);
-  for (const r of zombies ?? []) {
+    .limit(20);
+  const { harnessRuntime } = await import("../../harness/runtime.ts");
+  const bridge = harnessRuntime()?.bridge ?? null;
+  for (const r of (zombies ?? []) as Array<{ id: string; agent_id: string; opencode_session_id: string | null }>) {
+    if (r.opencode_session_id && bridge?.binding(r.opencode_session_id)) continue;
     await admin
       .from("internal_agent_runs")
       .update({
         status: "failed",
         finished_at: now.toISOString(),
-        error_message: "Timed out (worker did not finish within 30 minutes)",
+        error_message: "Timed out (no engine has been driving this run for 30 minutes)",
       })
       .eq("id", r.id)
       .eq("status", "running");

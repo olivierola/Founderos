@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/workflow-engine.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno, FUNCTIONS_URL } from "../../compat/index.ts";
 
 // Workflow engine — trigger a playbook, and hand it to an agent.
@@ -26,14 +24,10 @@ import { Deno, FUNCTIONS_URL } from "../../compat/index.ts";
 // second, worse copy that disagrees with the first within the minute.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { callAi, safeParseJson, type ChatMessage } from "./ai.ts";
-import { classifyTier, modelForTier, resolveProvider, cheapModel, cheapProvider } from "./model-router.ts";
-import {
-  buildInternalToolset, touchAgentMemories, type AgentToolRow, type InternalToolContext,
-} from "./internal-agent-tools.ts";
-import { compileSystemPrompt, type SectionInput } from "./prompt-compiler.ts";
+import { callAi, safeParseJson } from "./ai.ts";
+import { cheapModel, cheapProvider } from "./model-router.ts";
+import { touchAgentMemories } from "./internal-agent-tools.ts";
 import { evaluateDecision, runAutomation, testsOf } from "./automation-engine.ts";
-import { renderSoul, selectPreferences } from "./agent-context.ts";
 import { selectMemoriesForPrompt, type MemoryRow } from "./agent-memory.ts";
 import { embedTexts, embeddingsAvailable, toVectorLiteral } from "./jina.ts";
 // Le cron vit dans son propre module, sans dépendance : l'éditeur en a besoin
@@ -41,7 +35,7 @@ import { embedTexts, embeddingsAvailable, toVectorLiteral } from "./jina.ts";
 import { nextCronRun } from "./cron.ts";
 import { mcpGrantsOf } from "./workflow-doc.ts";
 import { validateMcpGrants } from "./mcp-servers.ts";
-import { applyPoolToToolRows, loadPoolScope, workflowPoolError } from "./resource-pools.ts";
+import { workflowPoolError } from "./resource-pools.ts";
 import { judge as judgeTs, noul as noulTs, readNoul as readNoulTs } from "./typesafe.ts";
 export { nextCronRun };
 
@@ -259,21 +253,11 @@ async function findAssistant(admin: Admin, wf: WorkflowRow): Promise<AssistantRo
   return (fallback ?? null) as AssistantRow | null;
 }
 
-/** Start the assistant on the playbook, on the durable tick engine — so a
- *  workflow that takes an hour survives the edge wall-clock like any other run. */
+/** Lance l'assistant sur la procédure, sur le harnais (runs.ts) : un workflow
+ *  d'une heure tient comme n'importe quel run. */
 async function dispatchPlaybook(
   admin: Admin, wf: WorkflowRow, a: AssistantRow, playbook: string, wfRunId: string, trigger: string,
 ): Promise<string | null> {
-  const [{ data: rawToolRows }, poolScope] = await Promise.all([
-    admin.from("internal_agent_tools")
-      .select("id, kind, name, description, config, enabled, requires_approval").eq("agent_id", a.id),
-    loadPoolScope(admin, a.id),
-  ]);
-  // Mode pools (0291) : le prompt annonce ce que le tick donnera vraiment.
-  const toolRows = poolScope
-    ? applyPoolToToolRows((rawToolRows ?? []) as AgentToolRow[], poolScope)
-    : (rawToolRows ?? []);
-
   // Les serveurs MCP que les étapes ont choisis (blocs Outil) : ouverts à CE run,
   // limités aux outils choisis, et recopiés sur les runs à qui il délègue. Un
   // serveur d'un autre espace, supprimé ou désactivé, n'est pas accordé.
@@ -286,109 +270,46 @@ async function dispatchPlaybook(
   }).select("id").single();
   const agentRunId = (tr as { id: string } | null)?.id ?? null;
   if (!agentRunId) return null;
-  /** Ce dont la procédure parle — sert à choisir la mémoire, les préférences
-   *  et le tier du modèle. Le playbook entier serait un mauvais résumé. */
-  const taskText = `${wf.name}\n${wf.description ?? ""}`.trim();
 
-  const ctxStub = {
-    admin, workspaceId: wf.workspace_id, projectId: wf.project_id,
-    agentId: a.id, agentName: a.name,
-    collaborationEnabled: true, autopilot: true, runId: agentRunId,
-    missionMode: true, delegationDepth: 0,
-    serviceDashboardId: a.service_dashboard_id ?? wf.service_dashboard_id,
-    userId: a.created_by ?? null,
-    // Inert like the rest of this stub, but it must be PRESENT: its presence is
-    // what tells buildInternalToolset that reports go to Le Rédacteur, so the
-    // advertised toolbox matches the one the tick engine really executes.
-    requestReport: async () => "",
-    createDeliverable: async () => {},
-    requestApproval: async () => "approval-skipped-in-workflow",
-    poolScope,
-    logEvent: async () => {},
-    isCancelled: async () => false,
-  } as unknown as InternalToolContext;
-  const { capabilitySummary } = buildInternalToolset((toolRows ?? []) as AgentToolRow[], ctxStub);
+  // Ce que la procédure a déjà donné : une procédure planifiée chaque matin ne
+  // redécouvre pas chaque matin ce qu'elle a appris la veille.
+  const history = await loadPreviousRuns(admin, wf.id, wfRunId);
+  const doctrine = [
+    "## Tu exécutes un mode opératoire",
+    "Le document de la consigne est la PROCÉDURE à suivre. Tu en es responsable de bout en bout.",
+    "- Lis-la en entier AVANT d'agir, puis pose ta liste de tâches (todowrite).",
+    "- TU DÉCIDES QUI FAIT QUOI : fais toi-même ce qui est de ton ressort, et confie le reste à l'agent le mieux placé (outil team : list, delegate ; subagent pour le parallèle). Crée un agent (outil mission, action new_agent) si aucun ne convient et que la procédure l'exige.",
+    "- **CONFIER À** : quand une étape nomme un délégataire, cette étape lui revient ; ne la fais pas à sa place.",
+    "- **CONTEXTE À FOURNIR** : le point le plus important. Quand une étape liste un contexte, transmets-le INTÉGRALEMENT et TEL QUEL à l'agent avec la consigne (recopie les notes dans son brief, nomme-lui les collections à consulter). Ce contexte n'existe que pour cette étape : ne le diffuse pas aux autres.",
+    "- Un bloc « Contexte pour la suite » vaut à partir de son emplacement et jusqu'à la fin de la branche où il se trouve.",
+    "- **ENTRÉES** : vérifie-les AVANT d'agir. Une entrée obligatoire absente du déclenchement arrête le run tout de suite, en disant laquelle manque.",
+    "- **OUTILS À UTILISER** : la section impose l'usage. Un outil marqué obligatoire doit réellement être appelé ; répondre de mémoire là où la procédure dit d'aller chercher est une faute.",
+    "- **SERVEURS MCP** : les outils MCP qu'une étape cite te sont ouverts pour ce run (outil apps), limités à ceux-là. Si tu délègues l'étape, l'agent reçoit le même accès : nomme-lui les outils. Une écriture soumise à approbation attend la validation.",
+    "- **PASSATION** : le brief part au(x) destinataire(s) nommé(s), avec « Ce qui doit revenir » recopié tel quel. En parallèle, un spécialiste par destinataire (subagent) ; sinon délègue (outil team, action delegate) l'un après l'autre, en attendant chaque retour. Vérifie chaque retour contre ce contrat avant d'enchaîner.",
+    "- **À MÉMORISER** : en fin de run, et seulement si le run a produit un fait durable, enregistre-le (remember), une fois, dans la portée indiquée.",
+    "- Un livrable JSON accompagné d'un schéma respecte ce schéma au caractère près : un programme le lira.",
+    "- Les règles s'appliquent à TOUTES les étapes, pas seulement à celle où elles sont écrites.",
+    "- Une BOUCLE se répète jusqu'à sa condition de sortie, sans dépasser le plafond d'itérations écrit ; au plafond, arrête et dis qu'elle n'a pas convergé. Sur un « pour chaque » de plus d'une dizaine d'éléments, parallélise.",
+    "- Une étape « Validation humaine » est un point d'arrêt : personne ne répond en direct, alors termine le run en disant précisément ce qui doit être validé et par qui.",
+    "- Produis chaque livrable attendu (outil document, action deliver) avant de conclure.",
+    `- Déclenchement de ce run : ${trigger}.`,
+  ].join("\n");
 
-  const sections: SectionInput[] = [
-    {
-      id: "identity",
-      body: `You are ${a.name}${a.persona ? ` — ${a.persona}` : ""}, the assistant of this service. You are executing an automated workflow.`,
-    },
-  ];
-  // Le caractère de l'assistant, puis ce qu'il sait déjà. La procédure était
-  // lancée « à froid » : sans mémoire ni préférences, une procédure planifiée
-  // chaque matin redécouvrait chaque matin ce qu'elle avait appris la veille —
-  // et le repayait en appels d'outils.
-  const soul = renderSoul(a.soul);
-  if (soul) sections.push({ id: "soul", body: soul });
-  if (a.instructions) sections.push({ id: "instructions", body: `Your instructions:\n${a.instructions}` });
-  const [memory, history] = await Promise.all([
-    loadProcedureMemory(admin, a.id, taskText),
-    loadPreviousRuns(admin, wf.id, wfRunId),
-  ]);
-  if (memory) sections.push({ id: "memory", body: memory });
-  if (history) sections.push({ id: "recent_work", body: history });
-  const prefs = selectPreferences(a.preferences, taskText, 1200);
-  if (prefs.body) sections.push({ id: "preferences", body: prefs.body });
-  sections.push({
-    id: "doctrine",
-    body: [
-      "## Tu exécutes un mode opératoire",
-      "Le document ci-dessous est la PROCÉDURE à suivre. Tu en es responsable de bout en bout.",
-      "- Lis-la en entier AVANT d'agir, puis pose ta checklist avec update_todos.",
-      "- TU DÉCIDES QUI FAIT QUOI : fais toi-même ce qui est de ton ressort, et délègue le reste à l'agent le mieux placé (list_team_agents, delegate_mission, spawn_parallel_agents). Crée un agent (create_agent) si aucun ne convient et que la procédure l'exige.",
-      "- **CONFIER À** : quand une étape nomme un délégataire, cette étape lui revient — ne la fais pas à sa place.",
-      "- **CONTEXTE À FOURNIR** : c'est le point le plus important. Quand une étape liste un contexte, transmets-le INTÉGRALEMENT et TEL QUEL à l'agent en même temps que la consigne — recopie les notes dans son brief, et nomme-lui les collections à consulter avec rag_search. Un agent qui reçoit la tâche sans son contexte échouera, et ce contexte n'existe QUE pour cette étape : ne le diffuse pas aux autres.",
-      "- Un bloc « Contexte pour la suite » vaut à partir de son emplacement et jusqu'à la fin de la branche où il se trouve — pas avant, pas ailleurs.",
-      "- **ENTRÉES** : vérifie-les AVANT d'agir. Une entrée obligatoire absente du déclenchement se demande avec ask_user tout de suite — la découvrir au milieu du travail oblige à jeter ce qui a déjà été fait.",
-      "- **OUTILS À UTILISER** : la section n'ouvre pas de droits, elle en impose l'usage. Un outil marqué obligatoire doit réellement être appelé — répondre de mémoire là où la procédure dit d'aller chercher est une faute, pas un raccourci.",
-      "- **SERVEURS MCP** : les outils mcp_… qu'une étape cite te sont ouverts pour ce run, limités à ceux-là. Sers-t'en À CETTE ÉTAPE. Si tu la délègues, l'agent reçoit le même accès : nomme-lui les outils dans son brief. Une écriture que le serveur soumet à approbation attend la validation, elle ne se contourne pas.",
-      "- **PASSATION** : le brief part au(x) destinataire(s) nommé(s), avec « Ce qui doit revenir » recopié tel quel dans leur consigne. En mode parallèle, spawn_parallel_agents (une sous-tâche par destinataire) ; sinon delegate_mission, l'un après l'autre, en attendant chaque retour. Vérifie le retour contre le contrat avant d'enchaîner ; s'il ne correspond pas, redemande plutôt que de rattraper toi-même.",
-      "- **À MÉMORISER** : en fin de run, et seulement si le run a produit un fait durable, enregistre-le avec save_memory — une fois, dans la portée indiquée. Un compte rendu du run n'est pas un fait durable.",
-      "- Un livrable au format JSON accompagné d'un schéma doit respecter ce schéma au caractère près : il sera lu par un programme, pas par une personne.",
-      "- Les règles s'appliquent à TOUTES les étapes, pas seulement à celle où elles sont écrites.",
-      "- Une BOUCLE se répète jusqu'à sa condition de sortie, sans jamais dépasser le plafond d'itérations écrit. Au plafond, arrête-toi et dis que la boucle n'a pas convergé. Sur un « pour chaque » de plus d'une dizaine d'éléments, parallélise avec spawn_parallel_agents.",
-      "- Une étape « Validation humaine » est un vrai point d'arrêt : demande avec ask_user et n'enchaîne qu'une fois la réponse obtenue.",
-      "- Produis chaque livrable attendu avec create_deliverable avant de conclure.",
-      "- Personne ne regarde en direct : ne pose de question que là où la procédure le prévoit ; partout ailleurs, décide et avance.",
-      `- Déclenchement de ce run : ${trigger}.`,
-    ].join("\n"),
-  });
-  sections.push({ id: "toolbox", body: `Your tools (full schemas are provided separately):\n${capabilitySummary}` });
-
-  const messages: ChatMessage[] = [
-    { role: "system", content: compileSystemPrompt(sections).system },
-    {
-      role: "user",
-      content: `Exécute ce mode opératoire maintenant.\n\n---\n\n${playbook}`,
-    },
-  ];
-
-  const provider = resolveProvider(a.model);
-  await admin.from("internal_agent_run_state").upsert({
-    run_id: agentRunId,
-    mode: "chat",
-    agent_id: a.id,
-    conversation_id: null,
-    mission_id: null,
-    messages,
-    round: 0,
-    max_rounds: 400,
-    provider,
-    // Le tier se décide sur l'INTENTION de la procédure (nom + description),
-    // pas sur le playbook compilé : celui-ci dépasse presque toujours 800
-    // caractères et contient « plan », « analyse »… — chaque procédure partait
-    // donc sur le modèle de raisonnement, le plus cher. Le runtime escalade
-    // de lui-même quand un run peine (replan → heavy).
-    model: modelForTier(classifyTier(taskText, { mode: "mission" }), provider),
-    processing_until: null,
-    last_input_at: new Date().toISOString(),
-    // The tick engine closes the workflow run when this one finishes.
-    meta: { workflow_run: { id: wfRunId } },
-  });
-  await admin.rpc("agent_tick_enqueue", { p_run_id: agentRunId });
-  // Le tick part maintenant plutôt qu'au prochain passage du drainer (10 s).
-  await admin.rpc("drain_agent_ticks").then(() => {}, () => {});
+  try {
+    const { requireRuntime, startAgentRun } = await import("../../harness/runs.ts");
+    await startAgentRun(await requireRuntime(), {
+      agentId: a.id, kind: "workflow", runId: agentRunId, via: "workflow",
+      text: `Exécute ce mode opératoire maintenant.\n\n---\n\n${playbook}`,
+      extraContext: [doctrine, history].filter(Boolean).join("\n\n"),
+      actingUserId: a.created_by ?? null,
+      // La fin du run clôt le run du workflow (lifecycle.ts).
+      meta: { workflow_run: { id: wfRunId } },
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await admin.from("internal_agent_runs").update({ status: "failed", finished_at: new Date().toISOString(), error_message: msg.slice(0, 500) }).eq("id", agentRunId);
+    return null;
+  }
   return agentRunId;
 }
 

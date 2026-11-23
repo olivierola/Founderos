@@ -1,5 +1,4 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/internal-agent-tools.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
+import { launchMissionNow } from "./mission-launch.ts";
 import { Deno, FUNCTIONS_URL } from "../../compat/index.ts";
 
 // Internal agent tool registry — the execution layer behind "autonomous agents".
@@ -541,12 +540,6 @@ async function awaitInlineApproval(
     scopeLabel: approvalScopeLabel(req.action_kind, req.payload, req.tool_name),
     actionKind: req.action_kind,
   });
-  // Extend the tick lease so a duplicate delivery can't fire while we wait.
-  if (ctx.runId) {
-    await ctx.admin.from("internal_agent_run_state")
-      .update({ processing_until: new Date(Date.now() + APPROVAL_POLL_MS + 60_000).toISOString() })
-      .eq("run_id", ctx.runId).then(() => {}, () => {});
-  }
 
   const deadline = Date.now() + APPROVAL_POLL_MS;
   while (Date.now() < deadline) {
@@ -670,16 +663,17 @@ function strOrJson(v: unknown): string {
   return String(v);
 }
 
-// Small run_state.meta accessors so a tool can accumulate durable per-run state
-// (e.g. an incremental report draft, spawn dedup) across tool calls / ticks.
+// L'état métier d'un run (internal_agent_runs.run_meta, 0313) : ce qu'un outil
+// accumule d'un appel à l'autre (le brouillon d'un rapport, les sous-tâches déjà
+// lancées). Lu et réécrit en entier : les autres clés sont gardées.
 async function readRunMeta(ctx: InternalToolContext): Promise<Record<string, unknown>> {
   if (!ctx.runId) return {};
-  const { data } = await ctx.admin.from("internal_agent_run_state").select("meta").eq("run_id", ctx.runId).maybeSingle();
-  return ((data as { meta?: Record<string, unknown> } | null)?.meta ?? {}) as Record<string, unknown>;
+  const { data } = await ctx.admin.from("internal_agent_runs").select("run_meta").eq("id", ctx.runId).maybeSingle();
+  return ((data as { run_meta?: Record<string, unknown> } | null)?.run_meta ?? {}) as Record<string, unknown>;
 }
 async function writeRunMeta(ctx: InternalToolContext, meta: Record<string, unknown>): Promise<void> {
   if (!ctx.runId) return;
-  await ctx.admin.from("internal_agent_run_state").update({ meta }).eq("run_id", ctx.runId).then(() => {}, () => {});
+  await ctx.admin.from("internal_agent_runs").update({ run_meta: meta }).eq("id", ctx.runId).then(() => {}, () => {});
 }
 
 // Classify an action as a WRITE (create / update / delete / send / modify) vs a
@@ -3772,15 +3766,12 @@ export function buildInternalToolset(
       }
       const { data: mission, error } = await ctx.admin.from("internal_agent_missions").insert(row).select("id").single();
       if (error) return `ERROR creating mission: ${error.message}`;
-      // Kick it off now via the run function (best-effort, fire-and-forget).
+      // Lancée tout de suite : un run en file, puis la mission (sans attendre).
       if (startNow) {
-        const base = Deno.env.get("SUPABASE_URL"); const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-        if (base && key) {
-          fetch(`${FUNCTIONS_URL}/functions/v1/internal-agent-run`, {
-            method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ mode: "mission", mission_id: mission.id }),
-          }).catch(() => {});
-        }
+        await launchMissionNow(ctx.admin, {
+          missionId: mission.id, agentId: String(row.agent_id), workspaceId: ctx.workspaceId, projectId: ctx.projectId,
+          triggeredBy: ctx.actingUserId ?? null, via: "api",
+        });
       }
       const localWhen = (iso: string) => new Intl.DateTimeFormat("fr-FR", {
         timeZone: tz, weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
@@ -3860,8 +3851,7 @@ export function buildInternalToolset(
         let alreadyTokens: string[][] = [];
         let fanoutCount = 0;
         if (ctx.runId) {
-          const { data } = await ctx.admin.from("internal_agent_run_state").select("meta").eq("run_id", ctx.runId).maybeSingle();
-          meta = ((data as { meta?: Record<string, unknown> } | null)?.meta ?? {}) as Record<string, unknown>;
+          meta = await readRunMeta(ctx);
           already = Array.isArray(meta.spawned_subtasks) ? (meta.spawned_subtasks as string[]) : [];
           alreadyTokens = Array.isArray(meta.spawned_topics) ? (meta.spawned_topics as string[][]) : [];
           fanoutCount = Number(meta.fanout_count) || 0;
@@ -3897,10 +3887,7 @@ export function buildInternalToolset(
         if (ctx.runId) {
           const next = [...already, ...fresh.map((s) => norm(s.label))].slice(-300);
           const nextTopics = [...alreadyTokens, ...fresh.map((s) => [...topicTokens(s.label)])].slice(-300);
-          await ctx.admin.from("internal_agent_run_state")
-            .update({ meta: { ...meta, spawned_subtasks: next, spawned_topics: nextTopics, fanout_count: fanoutCount + 1 } })
-            .eq("run_id", ctx.runId)
-            .then(() => {}, () => {});
+          await writeRunMeta(ctx, { ...meta, spawned_subtasks: next, spawned_topics: nextTopics, fanout_count: fanoutCount + 1 });
         }
 
         const result = await ctx.spawnParallel(fresh);

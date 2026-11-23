@@ -55,10 +55,13 @@ export interface AgentState {
   kitSessions: KitSessions;
   /** L'outillage installé, par agent. */
   kits: Map<string, InstalledKit>;
+  /** Le contexte du run en cours de chaque session (<run_context> : mode, mémoire, skills, heure). */
+  runContexts: Map<string, string>;
 }
 
 export const newAgentState = (): AgentState => ({
   turnModels: new Map(), extraModels: new Map(), controls: new Map(), kitSessions: new Map(), kits: new Map(),
+  runContexts: new Map(),
 });
 
 /** L'outillage FounderOS d'un agent (ses outils regroupés par lot), ou null. */
@@ -139,6 +142,14 @@ export function agentPlugin(
           ? state.turnModels.get(event.sessionID) ?? event.model.id
           : modelForRoute(profile, "light");
         event.model = { ...event.model, id } as typeof event.model;
+      });
+
+      // Le contexte du run (runs.ts) : ajouté à chaque requête de l'agent
+      // principal, après son prompt stable (le cache de préfixe en profite).
+      await ctx.session.hook("context", (event) => {
+        if (event.agent !== AGENT_ID) return;
+        const block = state.runContexts.get(event.sessionID);
+        if (block) event.system.push({ type: "text", text: block });
       });
 
       state.controls.set(agentId, {

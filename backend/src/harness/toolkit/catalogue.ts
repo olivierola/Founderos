@@ -543,3 +543,68 @@ export function uncovered(legacy: LegacyToolset): string[] {
     .map((d) => d.name)
     .filter((n) => !covered.has(n) && !covered.has(n.replace(/^(runner|sandbox|team)_/, "")) && !isAppTool(n));
 }
+
+// ── Les anciens noms ─────────────────────────────────────────────────────────
+
+/** Ce que devient un outil retiré, pour les doctrines et consignes écrites avec son nom. */
+const RETIRED_ALIASES: Record<string, string> = {
+  load_toolset: "open_lot", need_tools: "open_lot",
+  list_skills: "skill", use_skill: "skill", read_skill_file: "skill", use_procedure: "skill",
+  update_todos: "todowrite", ask_user: "question", say: "ta réponse écrite",
+  spawn_parallel_agents: "subagent", message_subagent: "subagent",
+  read_tool_output: "read (les sorties longues sont gardées en fichier)",
+  search_context: "grep, puis build_context(from)",
+  search_history: "build_context(types=[\"conversation\"])",
+  search_memory: "grep, ou build_context(types=[\"memory\"])",
+  search_past_work: "grep, ou build_context(types=[\"past_work\"])",
+  search_knowledge: "grep, ou build_context(types=[\"documents\"])",
+  knowledge_search: "grep, ou build_context(types=[\"facts\"])",
+  recall_findings: "build_context(types=[\"findings\"])",
+  company_objectives: "build_context(types=[\"company\"])",
+  explore_company_graph: "build_context(types=[\"company\"])",
+  query_table: "build_context(types=[\"table\"])",
+  my_resources: "build_context(types=[\"resources\"])",
+  save_memory: "remember(kind=\"fact\")",
+  remember_preference: "remember(kind=\"preference\")",
+  knowledge_save: "remember(kind=\"knowledge\")",
+  team_memory: "remember(kind=\"team\")",
+};
+
+/**
+ * La table des anciens noms d'outils vers les outils de cet agent : les
+ * doctrines, les skills et les consignes écrites par les humains citent encore
+ * `create_deliverable`, `manage_agents` ou `ask_user` ; le modèle sait ainsi
+ * quel outil appeler à la place. Seulement les noms qui ont un équivalent ici.
+ */
+export function legacyAliases(tools: KitTool[]): string[] {
+  const have = new Set(tools.map((t) => t.name));
+  const lines: string[] = [];
+  for (const spec of FACADES) {
+    if (!have.has(spec.name)) continue;
+    for (const [action, route] of Object.entries(spec.actions)) {
+      for (const legacy of route.legacy) lines.push(`${legacy} → ${spec.name}(${spec.key}="${action}")`);
+    }
+  }
+  if (have.has("apps")) {
+    lines.push("crm, send_email, run_automation, dashboard, list_connectors, composio_*, mcp_* → apps (list, describe, call)");
+  }
+  for (const [legacy, now] of Object.entries(RETIRED_ALIASES)) lines.push(`${legacy} → ${now}`);
+  return lines;
+}
+
+/**
+ * Le nom de l'ancien outil derrière un appel d'outil regroupé (document
+ * action=deliver → create_deliverable). Les contrôles écrits pour l'ancien
+ * moteur (preuves d'une action annoncée, contrat) reconnaissent ainsi l'appel.
+ */
+export function legacyNameFor(name: string, args: Record<string, unknown>): string {
+  const spec = FACADES.find((f) => f.name === name);
+  if (spec) {
+    const route = spec.actions[String(args[spec.key] ?? "")];
+    if (route?.legacy[0]) return route.legacy[0];
+  }
+  if (name === "remember") return MEMORY_KINDS[String(args.kind ?? "")]?.legacy ?? name;
+  if (name === "apps") return String(args.app ?? args.tool ?? args.name ?? name);
+  const native: Record<string, string> = { todowrite: "update_todos", question: "ask_user", subagent: "spawn_parallel_agents" };
+  return native[name] ?? name;
+}

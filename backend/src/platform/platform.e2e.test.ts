@@ -218,28 +218,8 @@ describe("plateforme auto-hébergée (supabase-js ↔ backend ↔ PostgreSQL)", 
     assert.ok(status !== null, "la requête pg_net a été envoyée par le worker");
 
     const jobs = await platform.db.query<{ jobname: string }>("select jobname from cron.job where jobname is not null");
-    assert.ok(jobs.some((j) => j.jobname === "drain-agent-ticks"), "les tâches planifiées des migrations sont enregistrées");
+    assert.ok(jobs.some((j) => j.jobname === "reconcile-zombie-runs"), "les tâches planifiées des migrations sont enregistrées");
+    assert.ok(!jobs.some((j) => j.jobname === "drain-agent-ticks"), "plus de file de ticks (0314)");
   });
 
-  it("le moteur des agents : file pgmq → drain_agent_ticks → vault → pg_net → internal-agent-run", async () => {
-    const runId = crypto.randomUUID();
-    await platform.db.query("select public.agent_tick_enqueue($1::uuid)", [runId]);
-    const before = await platform.db.query<{ id: string }>("select id::text as id from net._http_response");
-    // Ce que pg_cron lance toutes les 10 s : ici à la main, pour ne pas attendre.
-    const [{ n }] = await platform.db.query<{ n: number }>("select public.drain_agent_ticks() as n");
-    assert.ok(Number(n) >= 1, "le tick en file a été pris");
-    const [queued] = await platform.db.query<{ url: string; auth: string }>(
-      "select url, headers->>'Authorization' as auth from net.http_request_queue order by id desc limit 1");
-    if (queued) {
-      assert.equal(queued.url, `${url}/functions/v1/internal-agent-run`, "l'URL vient du vault : ce backend");
-      assert.equal(queued.auth, `Bearer ${serviceKey}`, "la clé service vient du vault");
-    }
-    let answered = false;
-    for (let i = 0; i < 40 && !answered; i++) {
-      await new Promise((r) => setTimeout(r, 250));
-      const rows = await platform.db.query<{ id: string }>("select id::text as id from net._http_response");
-      answered = rows.length > before.length;
-    }
-    assert.ok(answered, "le worker a appelé internal-agent-run");
-  });
 });

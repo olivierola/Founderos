@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/turn-principal.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno, FUNCTIONS_URL } from "../../compat/index.ts";
 
 // Un tour, une seule personne (d'après eve : « A turn runs as one principal »).
@@ -63,8 +61,8 @@ export async function insertChannelMessage(
 
 /** Un tour tourne-t-il dans cette conversation ? */
 export async function turnInProgress(admin: SupabaseClient, conversationId: string): Promise<boolean> {
-  const { data } = await admin.from("internal_agent_run_state")
-    .select("run_id").eq("conversation_id", conversationId).limit(1)
+  const { data } = await admin.from("internal_agent_runs")
+    .select("id").eq("conversation_id", conversationId).eq("status", "running").limit(1)
     .then((r) => r, () => ({ data: null }));
   return Array.isArray(data) && data.length > 0;
 }

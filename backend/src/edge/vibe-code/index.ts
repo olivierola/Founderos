@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/vibe-code/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno, defineHandler } from "../../compat/index.ts";
 
 // vibe-code — an agent that codes on a connected GitHub repo. It reads files,
@@ -19,8 +17,8 @@ import {
   createBranch, createPullRequest, getRepoInfo, getAuthenticatedLogin, forkRepo, waitForRepoBranch,
   getPullRequest, mergePullRequest,
 } from "../_shared/github.ts";
-import { runToolRounds, type ToolDef } from "../_shared/ai.ts";
-import { classifyTier, modelForTier } from "../_shared/model-router.ts";
+import type { ToolDef } from "../_shared/ai.ts";
+import { classifyTier } from "../_shared/model-router.ts";
 import { mcpCallTool } from "../_shared/mcp-client.ts";
 import { ensureAccessToken } from "../_shared/mcp-oauth.ts";
 import { loadMcpHeaders, mergeMcpHeaders } from "../_shared/mcp-headers.ts";
@@ -533,31 +531,24 @@ export default defineHandler(async (req) => {
         mcpDefs.length ? `- Outils externes (MCP) disponibles : ${mcpDefs.map((d) => d.function.name).join(", ")}. Utilise-les si la tâche l'exige.` : "",
         "- Quand tu as terminé, réponds par un résumé court (markdown) de ce que tu as changé. Si tu as remarqué en travaillant des améliorations valables HORS du périmètre demandé (bug, test manquant, dette, faille), termine par une courte section « Initiatives » (1-3 puces, sans les implémenter) — jamais de modifications hors périmètre de ta propre initiative.",
       ].filter(Boolean).join("\n");
-      // Cost-tiered model: cheap for simple edits, the stronger reasoning model
-      // only for heavy coding tasks (refactor, debug, migration, architecture).
-      const codeModel = modelForTier(classifyTier(prompt, { mode: "chat" }));
-      const r = await runToolRounds({
-        provider: "deepseek", model: codeModel,
-        messages: [{ role: "system", content: system }, ...priorTurns, { role: "user", content: `Tâche : ${prompt}` }],
-        tools: [...TOOLS, ...mcpDefs], executor, temperature: 0.2, maxTokens: 3500, maxRounds: 12,
+      // Le tour tourne sur le harnais (tour éphémère « vibe ») : le palier lourd
+      // seulement pour les vraies tâches de code (refactor, debug, migration).
+      const { callToolLoop } = await import("../../harness/ephemeral.ts");
+      const loop = (extra: Array<{ role: "user"; content: string }>, maxRounds: number) => callToolLoop("vibe", {
+        tier: classifyTier(prompt, { mode: "chat" }) === "heavy" ? "heavy" : "standard",
+        messages: [{ role: "system", content: system }, ...priorTurns, { role: "user", content: `Tâche : ${prompt}` }, ...extra],
+        tools: [...TOOLS, ...mcpDefs], executor, maxRounds, timeoutMs: 10 * 60_000,
       });
-      // Budget épuisé en plein travail → courte passe de finalisation pour que
-      // le message final reflète l'état réel (fait / restant) au lieu de se
-      // couper net (même filet que les missions des agents internes).
+      const r = await loop([], 12);
+      // Budget épuisé en plein travail : une courte passe de finalisation, pour
+      // que le message final dise l'état réel (fait, restant) au lieu de se couper net.
       let finalContent = r.content;
-      if (!r.finished) {
+      const finished = !!r.content.trim();
+      if (!finished) {
         try {
-          const fin = await runToolRounds({
-            provider: "deepseek", model: codeModel,
-            messages: [
-              { role: "system", content: system }, ...priorTurns,
-              { role: "user", content: `Tâche : ${prompt}` },
-              { role: "user", content: "STOP — budget d'étapes atteint. N'explore plus rien : mets à jour ta checklist (update_todos) une dernière fois, puis réponds par un résumé court de ce qui est FAIT (fichiers modifiés) et de ce qui RESTE à faire pour finir." },
-            ],
-            tools: [...TOOLS, ...mcpDefs], executor, temperature: 0.2, maxTokens: 2000, maxRounds: 3,
-          });
+          const fin = await loop([{ role: "user", content: "STOP : budget d'étapes atteint. N'explore plus rien : mets à jour ta checklist (update_todos) une dernière fois, puis réponds par un résumé court de ce qui est FAIT (fichiers modifiés) et de ce qui RESTE à faire pour finir." }], 3);
           finalContent = fin.content || finalContent;
-        } catch { /* finalize with what we have */ }
+        } catch { /* on finit avec ce qu'on a */ }
       }
       const changesArr = Object.entries(changes).map(([path, content]) => ({ path, content }));
       // FIX_PR: push the fix straight to the PR branch so the same PR re-runs CI.
@@ -570,7 +561,7 @@ export default defineHandler(async (req) => {
       return {
         message: finalContent || "Terminé.", base_branch: branch,
         changes: changesArr,
-        reads, steps, todos, tool_calls: r.toolCalls, finished: r.finished,
+        reads, steps, todos, tool_calls: r.toolCalls, finished,
         committed,
       };
     };

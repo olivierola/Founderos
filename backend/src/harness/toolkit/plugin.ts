@@ -9,11 +9,12 @@
 //   - déclare les spécialistes (sous-agents) et les skills de l'agent, chacun
 //     limité par des permissions.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
 import { Plugin } from "@opencode/plugin";
 import { Schema } from "effect";
 import {
-  LOTS, MEMORY_KINDS, buildKitTools, uncovered,
+  LOTS, MEMORY_KINDS, buildKitTools, legacyAliases, uncovered,
   type KitTool, type LegacyToolset, type LotId,
 } from "./catalogue.ts";
 import {
@@ -42,6 +43,14 @@ export interface KitSession {
 }
 
 export type KitSessions = Map<string, KitSession>;
+
+/**
+ * La session d'où part l'appel d'outil en cours. Les outils de l'ancien moteur
+ * en ont besoin pour connaître LEUR run (approbations, timeline, conversation,
+ * personne qui pilote le tour) : l'outillage est installé une fois par agent,
+ * mais chaque appel s'exécute dans cette portée.
+ */
+export const toolCallScope = new AsyncLocalStorage<{ sessionID: string; agent: string }>();
 
 /** Les outils natifs d'OpenCode qu'un lot ou le noyau garde ; tous les autres sont retirés. */
 const NATIVE_CORE = ["todowrite", "question", "subagent", "skill"];
@@ -90,6 +99,7 @@ function lotsOf(tools: KitTool[]) {
 
 export function kitGuidance(tools: KitTool[], specialists: ActiveSpecialist[], contextTypes: string[], grepTypes: string[] = []): string {
   const lots = lotsOf(tools);
+  const aliases = legacyAliases(tools);
   return [
     ...(grepTypes.length
       ? ["Pour savoir quelque chose, cherche D'ABORD avec grep, comme un développeur dans un dépôt : un ou plusieurs grep avec les mots-clés de la demande et des mots voisins (synonymes, sigles, noms propres, forme courte d'un mot). Chaque source trouvée a un identifiant (g1, g2…), son type et son chemin. Lis ensuite ce qui compte avec build_context(from=[…]). La recherche sémantique (build_context avec query et types) vient en complément, quand grep ne trouve rien."]
@@ -107,6 +117,9 @@ export function kitGuidance(tools: KitTool[], specialists: ActiveSpecialist[], c
     "- open_lot : ouvrir un lot d'outils. Un seul lot ouvert à la fois : ouvre celui dont tu as besoin, appelle son outil ; si ce n'est pas le bon, ouvre-en un autre.",
     "Lots :",
     ...lots.map((l) => `  - ${l.id} : ${l.summary} (${l.tools.join(", ")})`),
+    ...(aliases.length
+      ? ["Tes consignes, doctrines et skills citent parfois d'anciens noms d'outils ; voici l'outil à appeler à la place :", aliases.join(" ; ")]
+      : []),
   ].join("\n");
 }
 
@@ -248,7 +261,7 @@ export async function installToolkit(
         options: { codemode: false },
         description: t.description,
         input: LooseInput,
-        execute: async (input: Record<string, unknown>, c) => {
+        execute: (input: Record<string, unknown>, c) => toolCallScope.run({ sessionID: c.sessionID, agent: c.agent }, async () => {
           const args = (input ?? {}) as Record<string, unknown>;
           const s = session(c.sessionID);
           const spec = specialistOf(c.agent);
@@ -285,7 +298,7 @@ export async function installToolkit(
           }
           if (t.name === "context_page") return text(contextPage(s.context, args as never));
           return text(await t.run(args, c.signal));
-        },
+        }),
       });
     }
   });

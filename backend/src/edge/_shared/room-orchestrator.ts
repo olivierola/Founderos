@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/room-orchestrator.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Room orchestrator — the assistant as the room's conductor.
 //
@@ -28,25 +26,15 @@
 // agents' shared memory, and the next frontier goes out. When nothing is left,
 // the orchestrator posts the mission's closing report in the room.
 //
-// Everything an agent does inside a mission runs on the SAME durable tick engine
-// as a normal room turn (run_state + agent_tick_enqueue), so a task that takes
-// twenty minutes survives the edge wall-clock exactly like a chat turn does.
+// Everything an agent does inside a mission runs on the SAME engine as a normal
+// room turn (the OpenCode harness, harness/runs.ts), so a task that takes twenty
+// minutes is handled exactly like a chat turn.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callAi, safeParseJson, type ChatMessage } from "./ai.ts";
-import { buildInternalToolset, type AgentToolRow, type InternalToolContext } from "./internal-agent-tools.ts";
-import { applyPoolToToolRows, loadPoolScope, type PoolScope } from "./resource-pools.ts";
-import { classifyTier, modelForTier, resolveProvider, cheapProvider } from "./model-router.ts";
-import { compileSystemPrompt, type SectionInput } from "./prompt-compiler.ts";
-import { renderSoul, selectPreferences } from "./agent-context.ts";
+import { resolveProvider, cheapProvider } from "./model-router.ts";
 import { judge, choice, readChoice, qid } from "./typesafe.ts";
-import { loadCompanyContext, renderCompanySection, type CompanyContext } from "./company-context.ts";
-import { ORCHESTRATOR_PROACTIVITY } from "./proactivity.ts";
-import { ASSISTANT_OPS_DOCTRINE } from "./assistant-ops.ts";
-import { TEAM_OPS_DOCTRINE } from "./team-architect.ts";
-import { CONNECTOR_OPS_DOCTRINE } from "./assistant-connectors.ts";
 import { deriveContract } from "./agent-loop.ts";
-import { defaultTimezone, renderClock } from "./clock.ts";
 
 type Admin = SupabaseClient;
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
@@ -562,10 +550,10 @@ interface TaskRow {
 }
 
 /**
- * Hand one brief to one agent as a room turn. Creates the run, the "thinking"
- * placeholder the thread shows, and the resumable state the tick engine drains
- * — exactly the path a human-addressed turn takes, so a mission task is not a
- * second-class citizen with its own (divergent) execution semantics.
+ * Confie une consigne à un agent, comme un tour de salle : le run, le message
+ * « en réflexion » que montre le fil, puis le tour sur le harnais (runs.ts),
+ * exactement comme un tour adressé par un humain. Une tâche de mission n'a pas
+ * de chemin d'exécution à part.
  */
 export async function dispatchRoomTurn(admin: Admin, opts: {
   room: RoomRef;
@@ -585,17 +573,6 @@ export async function dispatchRoomTurn(admin: Admin, opts: {
     .eq("id", opts.agentId).maybeSingle();
   if (!agentRow) return null;
   const a = agentRow as RosterAgent;
-  const taskProvider = resolveProvider(a.model);
-
-  const [{ data: rawToolRows }, poolScope] = await Promise.all([
-    admin.from("internal_agent_tools")
-      .select("id, kind, name, description, config, enabled, requires_approval").eq("agent_id", a.id),
-    loadPoolScope(admin, a.id),
-  ]);
-  // Mode pools (0291) : le prompt annonce ce que le tick donnera vraiment.
-  const toolRows = poolScope
-    ? applyPoolToToolRows((rawToolRows ?? []) as AgentToolRow[], poolScope) as AgentToolRow[]
-    : (rawToolRows ?? []) as AgentToolRow[];
 
   const { data: tr } = await admin.from("internal_agent_runs").insert({
     agent_id: a.id, workspace_id: opts.room.workspace_id, project_id: opts.room.project_id,
@@ -613,32 +590,23 @@ export async function dispatchRoomTurn(admin: Admin, opts: {
   const messageId = (ph as { id: string } | null)?.id ?? null;
   if (!messageId) return null;
 
-  const company = await loadCompanyContext(admin, opts.room.project_id, {
-    agentId: a.id,
-    dashboardId: a.service_dashboard_id ?? opts.room.dashboard_id,
-  });
-  const system = buildRoomSystemPrompt({
+  const roomContext = buildRoomContext({
     agent: a, room: opts.room, dashboardName: opts.dashboardName,
-    toolRows, admin, poolScope,
     mission: opts.missionId ? { taskTitle: opts.brief.slice(0, 120) } : null,
-    company,
   });
+  // Le fil de la salle, pour la continuité, puis le contexte et la consigne.
+  const thread = (opts.thread ?? [])
+    .filter((m) => (m.role === "user" || m.role === "assistant") && String(m.content ?? "").trim())
+    .map((m) => String(m.content).slice(0, 1500));
+  const text = [
+    thread.length ? `# Le fil de la salle (du plus ancien au plus récent)\n${thread.join("\n\n")}` : "",
+    opts.context ? `# Contexte\n${opts.context}` : "",
+    opts.brief,
+  ].filter(Boolean).join("\n\n");
 
-  const messages: ChatMessage[] = [
-    { role: "system", content: system },
-    ...(opts.thread ?? []),
-    { role: "user", content: [opts.context ? `# Contexte\n${opts.context}` : "", opts.brief].filter(Boolean).join("\n\n") },
-  ];
-
-  // A MISSION TASK gets a success contract; a plain room turn does not.
-  //
-  // These runs go through the tick engine in "chat" mode, and the chat path
-  // only derives a contract when the request enters through internal-agent-run
-  // itself — a task dispatched from here had NO verification at all. That is how
-  // "j'ai produit le rapport" became a `done` card with nothing saved: nobody
-  // ever checked. With a contract, evaluateContract's deterministic
-  // `deliverable_exists` runs against the DB, and the controller replans instead
-  // of finalising on a claim.
+  // Une TÂCHE de mission a un contrat de succès ; un simple tour de salle non.
+  // Sans lui, « j'ai produit le rapport » devenait une carte « done » sans rien
+  // d'enregistré : le contrat vérifie en base que le livrable existe.
   const contract = opts.taskId
     ? await deriveContract({
         source: "mission",
@@ -648,148 +616,68 @@ export async function dispatchRoomTurn(admin: Admin, opts: {
       }).catch(() => null)
     : null;
 
-  await admin.from("internal_agent_run_state").upsert({
-    run_id: runId,
-    mode: "chat",
-    agent_id: a.id,
-    conversation_id: null,
-    mission_id: null,
-    contract,
-    messages,
-    round: 0,
-    max_rounds: 400,
-    // The assignee's OWN provider, not a hard-coded one: a mission task must run
-    // on whatever the agent it was handed to is configured for.
-    provider: taskProvider,
-    model: modelForTier(classifyTier(opts.brief, { mode: "chat" }), taskProvider),
-    processing_until: null,
-    last_input_at: new Date().toISOString(),
-    meta: {
-      room: { room_id: opts.room.id, placeholder_id: messageId },
-      // The tick engine reads this on finalization and re-enters the
-      // orchestrator with the task's result.
-      mission_task: opts.taskId ? { mission_id: opts.missionId, task_id: opts.taskId } : undefined,
-    },
-  });
-  await admin.rpc("agent_tick_enqueue", { p_run_id: runId });
-  // Le tick part maintenant plutôt qu'au prochain passage du drainer (10 s).
-  await admin.rpc("drain_agent_ticks").then(() => {}, () => {});
+  try {
+    const { requireRuntime, startAgentRun } = await import("../../harness/runs.ts");
+    await startAgentRun(await requireRuntime(), {
+      agentId: a.id, kind: "room", runId, text, extraContext: roomContext,
+      actingUserId: a.created_by ?? null, via: "room",
+      meta: {
+        room: { room_id: opts.room.id, placeholder_id: messageId },
+        // La fin du run relit ceci et rend la main à l'orchestrateur avec le résultat.
+        ...(opts.taskId ? { mission_task: { mission_id: opts.missionId, task_id: opts.taskId } } : {}),
+        contract,
+      },
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await admin.from("internal_agent_runs").update({ status: "failed", finished_at: new Date().toISOString(), error_message: msg.slice(0, 500) }).eq("id", runId);
+    await admin.from("service_room_messages").update({ content: `⚠️ ${msg}`, status: "failed" }).eq("id", messageId);
+    return null;
+  }
   return { runId, messageId };
 }
 
-/** The room system prompt, assembled by the prompt compiler so a room turn gets
- *  the same canonical, budgeted shape as an agent chat. */
-export function buildRoomSystemPrompt(opts: {
-  admin: Admin;
+/**
+ * Ce qu'un tour de salle ajoute au contexte du run de l'agent : la salle, qui
+ * parle, le rôle de chef d'orchestre s'il l'est, la tâche de mission. Son
+ * identité, son entreprise, son âme, ses consignes et ses outils sont déjà dans
+ * son prompt (harnais), comme dans son chat direct.
+ */
+export function buildRoomContext(opts: {
   agent: RosterAgent;
   room: RoomRef;
   dashboardName: string;
-  toolRows: AgentToolRow[];
-  /** Les pools de l'agent (0291) : la boîte à outils annoncée en dépend. */
-  poolScope?: PoolScope | null;
   mission?: { taskTitle: string } | null;
   extraContext?: string;
-  /** L'entreprise (0212), chargée par l'appelant. Un agent qui a un employeur
-   *  dans son chat direct et aucun dans une room est deux agents différents
-   *  pour la personne qui lui parle. */
-  company?: CompanyContext | null;
 }): string {
-  // A throwaway context: buildInternalToolset is only asked for its capability
-  // TREE here — the durable tick engine rebuilds the real executor. Everything
-  // in this stub is therefore inert by design.
-  const ctx = {
-    admin: opts.admin, workspaceId: opts.room.workspace_id, projectId: opts.room.project_id,
-    agentId: opts.agent.id, agentName: opts.agent.name,
-    collaborationEnabled: true, autopilot: false, runId: null,
-    missionMode: false, delegationDepth: 0,
-    serviceDashboardId: opts.agent.service_dashboard_id ?? opts.room.dashboard_id,
-    userId: opts.agent.created_by ?? null,
-    // Same reason as requestReport below: the tick engine registers the
-    // administration tools for the assistant, so the advertised toolbox must too.
-    isOrchestrator: opts.agent.is_orchestrator === true,
-    swarmEnabled: opts.agent.swarm_enabled !== false,
-    poolScope: opts.poolScope ?? null,
-    // Inert like the rest of this stub, but it must be PRESENT: its presence is
-    // what tells buildInternalToolset that reports go to Le Rédacteur, so the
-    // advertised toolbox matches the one the tick engine really executes.
-    requestReport: async () => "",
-    createDeliverable: async () => {},
-    requestApproval: async () => "approval-skipped-in-room",
-    logEvent: async () => {},
-    isCancelled: async () => false,
-  } as unknown as InternalToolContext;
-  const { capabilitySummary } = buildInternalToolset(opts.toolRows, ctx);
-
-  const sections: SectionInput[] = [
-    {
-      id: "identity",
-      body: [
-        `You are ${opts.agent.name}${opts.agent.persona ? ` — ${opts.agent.persona}` : ""}, an agent in the shared room "${opts.room.title}" of the "${opts.dashboardName}" workspace.`,
-        "The human and possibly other agents talk here; each message is prefixed with the speaker in [brackets]. Reply AS YOURSELF, directly and concisely — no need to restate the question or your name. Don't answer for other agents.",
-      ].join("\n"),
-    },
+  const parts: string[] = [
+    `## La salle « ${opts.room.title} » (service « ${opts.dashboardName} »)`,
+    "Des humains et d'autres agents y parlent ; chaque message commence par le nom de qui parle, entre [crochets]. Réponds EN TON NOM, directement et brièvement, sans reformuler la question ni te présenter. Ne réponds pas à la place des autres agents.",
+    "- Pour des chiffres, tableaux ou graphiques, affiche de vrais blocs (outil interface, action render). Un RAPPORT ne s'écrit pas ici : fais l'analyse avec tes outils, puis confie la matière au rédacteur (outil report, action request), qui le publie en carte. Des données réelles seulement.",
+    "- Ne pose une question de clarification que s'il est vraiment impossible d'avancer.",
   ];
-  // Ce qu'on est en train de faire, pour la sélection par pertinence.
-  const turnSubject = [opts.mission?.taskTitle ?? "", opts.extraContext ?? ""].join(" ").trim();
-  // L'employeur, avant le caractère — même ordre que dans le chat direct.
-  const comp = renderCompanySection(opts.company ?? null, turnSubject, 1200);
-  if (comp.body) sections.push({ id: "company", body: comp.body, dropped: comp.dropped, offered: comp.offered });
-  // Same three files as a direct chat: an agent that has a character in its own
-  // chat and none in a room is two different agents to the person talking to it.
-  // Preferences are selected against what this turn is about — the task title
-  // for a mission, the free context otherwise.
-  const soul = renderSoul(opts.agent.soul);
-  if (soul) sections.push({ id: "soul", body: soul });
-  if (opts.agent.instructions) sections.push({ id: "instructions", body: `Your instructions:\n${opts.agent.instructions}` });
-  const prefs = selectPreferences(opts.agent.preferences, turnSubject, 1200);
-  if (prefs.body) sections.push({ id: "preferences", body: prefs.body, dropped: prefs.dropped, offered: prefs.offered });
   if (opts.agent.is_orchestrator) {
-    sections.push({
-      id: "doctrine",
-      body: [
-        "## Tu es le chef d'orchestre de cette room",
-        "Tu es le nœud central du service : tu réponds, tu routes, tu organises, et tu peux CONSTRUIRE l'espace de travail à la demande.",
-        "- Crée un agent sur mesure (manage_agents create) dès que l'utilisateur décrit un besoin qu'aucun agent existant ne couvre : nom clair, rôle, instructions opérationnelles, et dans le même appel les connecteurs, skills et outils demandés. Il rejoint la room tout de suite.",
-        "- Planifie du récurrent avec create_mission (schedule cron, heure locale de l'utilisateur), un rappel ou une tâche ponctuelle plus tard avec create_mission (run_at), lance de l'immédiat avec create_mission (start_now) sur l'agent le mieux placé.",
-        "- Quand une mission de room est en cours, tu en es le responsable : tu suis l'avancement, tu synthétises les résultats des autres agents, et tu conclus.",
-        "Confirme chaque action faite, en une phrase (« Agent X créé », « Brief quotidien planifié à 6h »).",
-        "",
-        ASSISTANT_OPS_DOCTRINE,
-        "",
-        TEAM_OPS_DOCTRINE,
-        "",
-        CONNECTOR_OPS_DOCTRINE,
-        "",
-        ORCHESTRATOR_PROACTIVITY,
-      ].join("\n"),
-    });
+    parts.push(
+      "",
+      "## Tu es le chef d'orchestre de cette salle",
+      "Tu es le nœud central du service : tu réponds, tu routes, tu organises, et tu peux construire l'espace de travail à la demande.",
+      "- Crée un agent sur mesure (admin, target agents) dès qu'un besoin décrit n'est couvert par aucun agent existant : nom clair, rôle, consignes, et dans le même appel les connecteurs, skills et outils demandés. Il rejoint la salle tout de suite.",
+      "- Planifie du récurrent ou du ponctuel avec l'outil mission (action create : planning, date, ou lancement immédiat sur l'agent le mieux placé).",
+      "- Quand une mission de salle est en cours, tu en es responsable : tu suis l'avancement, tu synthétises les résultats des autres agents, et tu conclus.",
+      "Confirme chaque action faite, en une phrase (« Agent X créé », « Brief quotidien planifié à 6 h »).",
+    );
   }
   if (opts.mission) {
-    sections.push({
-      id: "context",
-      body: [
-        "## Tu exécutes UNE tâche d'une mission collective",
-        `Tâche : ${opts.mission.taskTitle}`,
-        "Traite EXACTEMENT cette tâche — ni plus (les autres tâches ont leurs propres agents), ni moins.",
-        "Termine par un compte rendu court et factuel : ce que tu as produit, les chiffres/faits clés, et ce qui bloque encore s'il y a lieu. Un autre agent va s'appuyer dessus — écris pour lui.",
-      ].join("\n"),
-    });
+    parts.push(
+      "",
+      "## Tu exécutes UNE tâche d'une mission collective",
+      `Tâche : ${opts.mission.taskTitle}`,
+      "Traite EXACTEMENT cette tâche, ni plus (les autres tâches ont leurs agents), ni moins.",
+      "Termine par un compte rendu court et factuel : ce que tu as produit, les chiffres et faits clés, ce qui bloque encore s'il y a lieu. Un autre agent va s'appuyer dessus : écris pour lui.",
+    );
   }
-  if (opts.extraContext) sections.push({ id: "context", body: opts.extraContext });
-  sections.push({
-    id: "rules",
-    body: [
-      "- Use render_ui for metrics/tables/charts. A REPORT is not written here: hand the matter to Le Rédacteur with request_report and he publishes it (it appears as a card). Real data only.",
-      "- QUAND ON TE DEMANDE UN RAPPORT / UNE ANALYSE / UN LIVRABLE : NE demande PAS quoi faire, ne réponds PAS juste par du texte conversationnel. Fais l'analyse avec tes outils MAINTENANT, puis appelle request_report(subject, material, angle) en lui passant les chiffres avec leurs sources, les constats et ce qui reste incertain. C'est lui qui rédige — toi, tu rassembles.",
-      "- Ne pose une question de clarification QUE si c'est réellement impossible d'avancer.",
-      "- ARTIFACTS : list_artifacts pour voir ce qui existe déjà, read_artifact pour le relire, update_artifact pour le corriger EN PLACE. Ne crée pas un deuxième document là où il faut modifier le premier.",
-    ].join("\n"),
-  });
-  sections.push({ id: "toolbox", body: `Your tools (full schemas are provided separately):\n${capabilitySummary}` });
-  // Same clock as a direct chat — "remind me Thursday" in a room is no less common.
-  sections.push({ id: "context", body: renderClock(defaultTimezone()) });
-
-  return compileSystemPrompt(sections).system;
+  if (opts.extraContext) parts.push("", opts.extraContext);
+  return parts.join("\n");
 }
 
 // ---------------------------------------------------------------------------

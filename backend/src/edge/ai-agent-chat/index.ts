@@ -1,6 +1,4 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/ai-agent-chat/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
-import { Deno, defineHandler } from "../../compat/index.ts";
+import { defineHandler } from "../../compat/index.ts";
 
 // ai-agent-chat — contextual chat with the SaaS Cockpit agent.
 // Body: { workspace_id, project_id, conversation_id?, message }
@@ -9,8 +7,7 @@ import { Deno, defineHandler } from "../../compat/index.ts";
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
-import { callAi, callAiWithTools, safeParseJson, type AiTask, type ChatMessage } from "../_shared/ai.ts";
-import { sanitizeModel } from "../_shared/model-router.ts";
+import { callAi, safeParseJson, type AiTask, type ChatMessage } from "../_shared/ai.ts";
 import { logLlmUsage } from "../_shared/llm-tracking.ts";
 import {
   type WorkspaceRole, type EmittedArtifact, type ToolContext,
@@ -279,61 +276,24 @@ ${JSON.stringify({ project: context.project, connectors: context.connectors, cod
       emitArtifact: (a) => artifacts.push(a),
     };
 
-    // DeepSeek handles native tool-calling reliably; Groq/Llama frequently emits
-    // malformed tool calls (400 tool_use_failed). Prefer DeepSeek when available,
-    // fall back to Groq otherwise — unless the composer pinned a model, whose
-    // provider then decides. Banned/unknown ids fall back to the provider's own
-    // default rather than reaching the API (see sanitizeModel).
-    // « auto » (le choix par défaut du composer) n'impose rien : le routage
-    // choisit. Une route (`@heavy`, `@light`…) passe telle quelle — la
-    // passerelle la traduit, et sans passerelle elle est ignorée.
+    // Le tour tourne sur le harnais (tour éphémère « cockpit »), sur la
+    // connexion de la plateforme. Le composer peut imposer un modèle
+    // (« fournisseur/modèle ») ou un palier (`@light`, `@heavy`) ; « auto » laisse
+    // le palier standard.
     const raw = String(model ?? "").trim();
     const pinned = raw === "auto" ? "" : raw;
-    const isRoute = pinned.startsWith("@");
-    const pinnedProviderName: "groq" | "deepseek" | null = pinned && !isRoute
-      ? (pinned.startsWith("deepseek") ? "deepseek" : "groq")
-      : null;
-    const hasKey = (p: "groq" | "deepseek") =>
-      !!Deno.env.get(p === "groq" ? "GROQ_API_KEY" : "DEEPSEEK_API_KEY");
-    const preferred: "groq" | "deepseek" =
-      pinnedProviderName && hasKey(pinnedProviderName)
-        ? pinnedProviderName
-        : (hasKey("deepseek") ? "deepseek" : "groq");
-    const pinnedModel = isRoute ? pinned
-      : pinnedProviderName === preferred ? sanitizeModel(pinned, preferred) : undefined;
-    let aiResult;
-    try {
-      aiResult = await callAiWithTools({
-        provider: preferred,
-        model: pinnedModel,
-        messages: chatMessages,
-        tools: toolDefsForRole(userRole),
-        executor: buildExecutor(toolCtx),
-        temperature: 0.3,
-        maxTokens: 1500,
-        // Building a workflow is a SEQUENCE of calls (create → un bloc par
-        // appel → activate). At six the loop stopped mid-procedure and the
-        // model narrated a workflow it had never finished.
-        maxRounds: 16,
-      });
-    } catch (e) {
-      // If the preferred provider fails, retry once on the other provider.
-      const fallback = preferred === "deepseek" ? "groq" : "deepseek";
-      const fallbackKey = fallback === "groq" ? "GROQ_API_KEY" : "DEEPSEEK_API_KEY";
-      if (!Deno.env.get(fallbackKey)) throw e;
-      aiResult = await callAiWithTools({
-        provider: fallback,
-        messages: chatMessages,
-        tools: toolDefsForRole(userRole),
-        executor: buildExecutor(toolCtx),
-        temperature: 0.3,
-        maxTokens: 1500,
-        // Building a workflow is a SEQUENCE of calls (create → un bloc par
-        // appel → activate). At six the loop stopped mid-procedure and the
-        // model narrated a workflow it had never finished.
-        maxRounds: 16,
-      });
-    }
+    const tier = pinned === "@light" ? "light" as const : pinned === "@heavy" ? "heavy" as const : undefined;
+    const { callToolLoop } = await import("../../harness/ephemeral.ts");
+    const aiResult = await callToolLoop("cockpit", {
+      model: pinned.includes("/") ? pinned : null,
+      tier,
+      messages: chatMessages,
+      tools: toolDefsForRole(userRole),
+      executor: buildExecutor(toolCtx),
+      // Construire un workflow est une SUITE d'appels (créer, un bloc par
+      // appel, activer) : à six tours, la boucle s'arrêtait au milieu.
+      maxRounds: 16,
+    });
 
     await logLlmUsage({
       workspace_id,

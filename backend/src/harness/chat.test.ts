@@ -187,28 +187,36 @@ describe("un tour de chat sur OpenCode, projeté pour le front", () => {
   });
 });
 
-describe("aiguillage d'internal-agent-run", () => {
-  it("un agent « legacy » passe vers l'ancien moteur ; un agent « opencode » est pris ; les contrôles d'accès tiennent", async () => {
+describe("internal-agent-run sur le harnais", () => {
+  it("contrôles d'accès, conversation de l'agent, chat et mission confiés au lancement des runs", async () => {
     const f = fixture("conv-5", [{ role: "user", content: "Bonjour" }]);
     llm.script = [{ text: "Bonjour !" }];
+    const started: Array<Record<string, unknown>> = [];
     const runtime: HarnessRuntime = {
       ...f.deps, serviceKey: "service-key",
       verifyUser: async (t) => (t === "user-ok-token" ? "user-ok" : t === "user-other-token" ? "user-other" : null),
       checkCredits: async () => {},
+      // Le lancement réel (runs.ts) lit la base ; ici, un tour de chat direct.
+      startRun: async (input) => {
+        started.push(input as never);
+        if (input.kind === "mission") return { ok: true, run_id: String(input.runId), queued: true };
+        return startChatTurn(f.deps, { agent: AGENT, conversationId: String(input.conversationId) });
+      },
     };
     const app = express();
     app.use("/functions/v1", harnessRouter(() => runtime));
-    app.use("/functions/v1", express.raw({ type: () => true }), (req, res) => res.json({ legacy: true, body: String(req.body) }));
     const server = app.listen(0);
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/functions/v1/internal-agent-run`;
     const post = (token: string, body: Record<string, unknown>) => fetch(base, {
       method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
     try {
-      const legacy = await post("service-key", { agent_id: LEGACY.id, mode: "chat", conversation_id: "conv-5-legacy" });
-      assert.deepEqual(await legacy.json(), { legacy: true, body: JSON.stringify({ agent_id: LEGACY.id, mode: "chat", conversation_id: "conv-5-legacy" }) });
-      const mission = await post("service-key", { agent_id: AGENT.id, mode: "mission", run_id: "r" });
-      assert.equal(((await mission.json()) as { legacy?: boolean }).legacy, true);
+      // Plus d'ancien moteur : l'ancienne file de ticks est sans effet, un mode inconnu est refusé.
+      assert.deepEqual(((await (await post("service-key", { mode: "tick", run_id: "r" })).json()) as { skipped?: boolean }).skipped, true);
+      assert.equal((await post("service-key", { agent_id: AGENT.id, mode: "inconnu" })).status, 400);
+      const mission = await post("service-key", { agent_id: AGENT.id, mode: "mission", run_id: "r-42" });
+      assert.deepEqual(await mission.json(), { ok: true, run_id: "r-42", queued: true });
+      assert.equal(started.at(-1)?.kind, "mission");
       assert.equal((await post("bad", { agent_id: AGENT.id, mode: "chat", conversation_id: "conv-5" })).status, 401);
       assert.equal((await post("user-other-token", { agent_id: AGENT.id, mode: "chat", conversation_id: "conv-5" })).status, 403);
       assert.equal((await post("user-ok-token", { agent_id: AGENT.id, mode: "chat", conversation_id: "conv-x" })).status, 403);
@@ -216,6 +224,7 @@ describe("aiguillage d'internal-agent-run", () => {
       assert.equal(ok.status, 200);
       const out = (await ok.json()) as { run_id?: string; queued?: boolean };
       assert.equal(out.queued, true);
+      assert.equal(started.at(-1)?.actingUserId, "user-ok", "le tour est piloté par la personne qui a écrit");
       await f.bridge.settled(f.mem.conversations.find((c) => c.id === "conv-5")!.sessionId!);
       assert.equal(f.mem.messages.at(-1)?.content, "Bonjour !");
     } finally {

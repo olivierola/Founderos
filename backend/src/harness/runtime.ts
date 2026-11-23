@@ -1,6 +1,6 @@
-// Le harnais en service dans ce processus : l'hôte, le magasin, le pont.
-// Null tant qu'il n'est pas démarré (mode cloud, HARNESS_OPENCODE=0) : la
-// route laisse alors tout passer vers l'ancien moteur.
+// Le harnais en service dans ce processus : l'hôte, le magasin, le pont, le
+// cycle de vie des runs. C'est le seul moteur d'agents ; null tant qu'il n'est
+// pas démarré (HARNESS_OPENCODE=0) : les runs répondent alors 503.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { logLlmUsage } from "../edge/_shared/llm-tracking.ts";
@@ -8,8 +8,12 @@ import { assertCredits, assertQuota } from "../edge/_shared/metering.ts";
 import { chooseTurnModel, loadAgentProfile } from "./agent-profile.ts";
 import { agentPlugin, newAgentState, type KitLoader } from "./agent-plugin.ts";
 import { documentCollections, rpcSearchIndex, supabaseRpc } from "./toolkit/grep.ts";
-import type { Kit } from "./toolkit/plugin.ts";
+import { toolCallScope, type Kit } from "./toolkit/plugin.ts";
 import { startBridge, type Bridge } from "./bridge.ts";
+import { guardToolCall, guardToolResult, loadAgentGuardrails } from "./guard.ts";
+import { evalStubFor } from "../edge/_shared/eval-stubs.ts";
+import { createLifecycle } from "./lifecycle.ts";
+import { ephemeralPlugin } from "./ephemeral.ts";
 import type { AgentSupport } from "./chat.ts";
 import type { Harness, HarnessInstances } from "./host.ts";
 import { supabaseStore, type HarnessStore, type UsageRow } from "./store.ts";
@@ -25,6 +29,8 @@ export interface HarnessRuntime {
   checkCredits: (workspaceId: string) => Promise<void>;
   /** Les agents FounderOS (prompt, modèles) : absent, l'agent par défaut d'OpenCode. */
   agents?: AgentSupport;
+  /** Le lancement d'un run (runs.ts, startAgentRun) ; remplaçable dans les tests de la route. */
+  startRun?: (input: import("./runs.ts").AgentRunInput) => Promise<import("./chat.ts").ChatTurn>;
 }
 
 /**
@@ -51,25 +57,51 @@ export function agentSupport(admin: SupabaseClient, opts: {
     },
     instances: {
       key: (session: { metadata?: unknown }) => {
-        const id = (session.metadata as Record<string, unknown> | undefined)?.agent_id;
+        const meta = (session.metadata as Record<string, unknown> | undefined) ?? {};
+        // Un tour éphémère (cockpit, widget, rédacteur…) : une instance par famille.
+        if (typeof meta.ephemeral === "string" && meta.ephemeral) return `eph:${meta.ephemeral}`;
+        const id = meta.agent_id;
         return typeof id === "string" && id ? id : "default";
       },
       // Une session sans agent FounderOS garde l'agent par défaut d'OpenCode.
       configure: (key: string) => ({
-        plugins: key === "default" ? [] : [agentPlugin(key, () => load(key), state, { kit: kitFor(key), skillsDir: opts.skillsDir, log: opts.log })],
+        plugins: key === "default" ? []
+          : key.startsWith("eph:") ? [ephemeralPlugin(key.slice(4))]
+          : [agentPlugin(key, () => load(key), state, { kit: kitFor(key), skillsDir: opts.skillsDir, log: opts.log })],
       }),
     },
   };
 }
 
 /**
- * L'outillage d'un agent depuis l'ancien moteur : ses handlers, ses schémas
- * (cachés compris) et ses skills. Un run nul : les événements de la timeline
- * viennent du pont (bridge.ts), pas des handlers.
+ * L'outillage d'un agent : ses handlers, ses schémas (cachés compris) et ses
+ * skills. Les schémas viennent d'un jeu monté sans run ; chaque APPEL, lui,
+ * s'exécute dans le jeu de SON run (run, conversation, personne qui pilote le
+ * tour), retrouvé par la session d'où part l'appel : les approbations, les
+ * messages en ligne et la timeline des outils visent le bon run.
  */
 export async function loadKit(agentId: string): Promise<Kit> {
-  const { prepareAgentToolset } = await import("../edge/internal-agent-run/index.ts");
+  const { prepareAgentToolset } = await import("../agents/toolset.ts");
   const t = await prepareAgentToolset(agentId, { runId: null });
+  type Toolset = Awaited<ReturnType<typeof prepareAgentToolset>>;
+  const perRun = new Map<string, Promise<Toolset>>();
+  // Les garde-fous de l'agent (espace, équipe, pools), relus au plus toutes les minutes.
+  let guards: { at: number; rows: Promise<Awaited<ReturnType<typeof loadAgentGuardrails>>> } | null = null;
+  const guardrails = () => {
+    if (!guards || Date.now() - guards.at > 60_000) guards = { at: Date.now(), rows: loadAgentGuardrails(t.ctx.admin as never, t.agent) };
+    return guards.rows;
+  };
+  const toolsetFor = (run: { runId: string; conversationId: string | null; actingUserId?: string | null }): Promise<Toolset> => {
+    let p = perRun.get(run.runId);
+    if (!p) {
+      p = prepareAgentToolset(agentId, { runId: run.runId, conversationId: run.conversationId, actingUserId: run.actingUserId ?? null });
+      p.catch(() => perRun.delete(run.runId));
+      perRun.set(run.runId, p);
+      // Les runs finis ne reviennent pas : on garde les plus récents.
+      while (perRun.size > 32) perRun.delete(perRun.keys().next().value as string);
+    }
+    return p;
+  };
   return {
     agentName: t.agent.name,
     isOrchestrator: !!t.agent.is_orchestrator,
@@ -82,7 +114,21 @@ export async function loadKit(agentId: string): Promise<Kit> {
     }),
     legacy: {
       defs: t.allDefs.map((d) => ({ name: d.name, description: d.description, parameters: d.parameters })),
-      run: (name, args, signal) => t.executor(name, args, { signal }),
+      run: async (name, args, signal) => {
+        const scope = toolCallScope.getStore();
+        const run = scope ? harnessRuntime()?.bridge.binding(scope.sessionID) ?? null : null;
+        const set = run && run.agentId === agentId ? await toolsetFor(run) : t;
+        // Une éval remplace certains outils par des réponses écrites d'avance (npm run eval).
+        const stubbed = evalStubFor(agentId, name, args);
+        if (stubbed != null) return stubbed;
+        // Les garde-fous avant l'appel (il ne part pas) et sur son résultat.
+        const rows = await guardrails().catch(() => []);
+        const runId = run?.runId ?? null;
+        const refused = rows.length ? await guardToolCall(t.ctx.admin as never, t.agent, runId, rows, name, args) : null;
+        if (refused) return refused;
+        const out = String(await set.executor(name, args, { signal }));
+        return rows.length ? guardToolResult(t.ctx.admin as never, t.agent, runId, rows, name, out) : out;
+      },
     },
   };
 }
@@ -111,7 +157,13 @@ export function usageToLlm(row: UsageRow): Promise<void> {
 /** Branche le magasin et le pont sur un hôte démarré. */
 export function startRuntime(harness: Harness, admin: SupabaseClient, serviceKey: string, agents?: AgentSupport): HarnessRuntime {
   const store = supabaseStore(admin, usageToLlm);
-  const bridge = startBridge(harness.opencode, store);
+  // La fin des runs (contrat, livrables, salle, mission, workflow…) : lifecycle.ts.
+  const lifecycle = createLifecycle({
+    prompt: async (sessionID, text) => { await harness.opencode.sessions.prompt({ sessionID, text }); },
+  });
+  const bridge = startBridge(harness.opencode, store, {
+    settle: lifecycle.settle, question: lifecycle.question, overBudget: lifecycle.overBudget,
+  });
   current = {
     harness, store, bridge, serviceKey, agents,
     verifyUser: async (token) => {

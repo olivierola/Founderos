@@ -113,8 +113,9 @@ function evalFiles(dir: string): string[] {
 }
 
 // ── Exécution ─────────────────────────────────────────────────────────────
-const TERMINAL = new Set(["succeeded", "failed", "cancelled", "awaiting_input", "awaiting_approval"]);
-const MAX_TICKS = 25;
+const TERMINAL = new Set(["succeeded", "failed", "cancelled", "awaiting_input"]);
+/** Le plus long qu'on attende un tour, en millisecondes. */
+const TURN_TIMEOUT_MS = 5 * 60_000;
 
 async function main(): Promise<number> {
   const { env } = await import("../env.ts");
@@ -129,6 +130,15 @@ async function main(): Promise<number> {
   }, () => {});
   const server = createServer(undefined, { platform });
   await new Promise<void>((r) => server.listen(PORT, r));
+  // Le moteur des agents, comme dans index.ts : le harnais OpenCode et son outillage.
+  const { startHarness, stopHarness } = await import("../harness/host.ts");
+  const { agentSupport, startRuntime, stopRuntime } = await import("../harness/runtime.ts");
+  const { createServiceClient } = await import("../edge/_shared/supabase-admin.ts");
+  const harnessAdmin = createServiceClient();
+  const agents = agentSupport(harnessAdmin, { kit: true, skillsDir: `${env.harness!.dataDir}/skills` });
+  const harness = await startHarness({ instances: agents.instances, dataDir: `${env.harness!.dataDir}-evals`, fetchModels: false });
+  startRuntime(harness, harnessAdmin, env.supabaseServiceRoleKey, agents.support);
+  const stopEngine = async () => { await stopRuntime(); await stopHarness(); };
   const opts = { auth: { persistSession: false, autoRefreshToken: false } };
   // deno-lint-ignore no-explicit-any
   const admin: any = createClient(env.functionsUrl, env.supabaseServiceRoleKey, opts);
@@ -184,9 +194,10 @@ async function main(): Promise<number> {
         if (!runId) throw new Error(`le tour n'a pas démarré (${started.status} ${JSON.stringify(started.json)})`);
         let status = "running";
         let ticks = 0;
-        while (!TERMINAL.has(status) && ticks < MAX_TICKS) {
+        const until = Date.now() + TURN_TIMEOUT_MS;
+        while (!TERMINAL.has(status) && Date.now() < until) {
           ticks++;
-          await call({ mode: "tick", run_id: runId });
+          await new Promise((r) => setTimeout(r, 500));
           const { data: run } = await admin.from("internal_agent_runs").select("status").eq("id", runId).single();
           status = String(run?.status ?? "disparu");
         }
@@ -277,6 +288,7 @@ async function main(): Promise<number> {
   }
 
   console.log(`\n${ran} éval(s) en mode ${live ? "réel" : "simulé"} : ${gateFailures} échec(s) bloquant(s), ${softFailures} indicatif(s).`);
+  await stopEngine();
   await new Promise<void>((r) => server.close(() => r()));
   await platform.close();
   return gateFailures > 0 || (strict && softFailures > 0) ? 1 : 0;

@@ -35,7 +35,7 @@ Ensuite :
 | `--import "<URL Postgres>"` | Copie d'abord une base Supabase : comptes, schéma public, storage, secrets du vault. L'index de recherche des agents est reconstruit à la fin |
 | `--force` | Avec `--import` : écrase une base locale qui a déjà des comptes |
 | `--source-url <https://ref.supabase.co> --source-key <service_role>` | Avec `--import` : copie aussi les fichiers du storage |
-| `--no-harness` | Désactive le harnais OpenCode : tous les agents restent sur l'ancien moteur |
+| `--no-harness` | Éteint le moteur d'agents (le harnais OpenCode, seul moteur) : l'API répond, les agents non |
 | `--backend-only` | Ne démarre pas le front |
 | `--setup-only` | Prépare tout sans rien démarrer |
 | `--skip-install` | Ne vérifie pas les dépendances (démarrages suivants) |

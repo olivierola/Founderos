@@ -89,7 +89,7 @@ describe("harnais OpenCode sur la plateforme locale (HTTP ↔ OpenCode ↔ Postg
     id.ws = (await one<{ id: string }>("insert into public.workspaces (name, slug) values ('Espace', 'espace-harness') returning id"))!.id;
     id.project = (await one<{ id: string }>("insert into public.projects (workspace_id, name, slug) values ($1, 'Projet', 'projet-harness') returning id", [id.ws]))!.id;
     id.agent = (await one<{ id: string }>(
-      "insert into public.internal_agents (workspace_id, project_id, name, harness) values ($1, $2, 'Ops', 'opencode') returning id",
+      "insert into public.internal_agents (workspace_id, project_id, name) values ($1, $2, 'Ops') returning id",
       [id.ws, id.project]))!.id;
     id.conv = (await one<{ id: string }>(
       "insert into public.internal_agent_conversations (agent_id, workspace_id, project_id, title) values ($1, $2, $3, 'Acme') returning id",
@@ -107,8 +107,15 @@ describe("harnais OpenCode sur la plateforme locale (HTTP ↔ OpenCode ↔ Postg
     await rm(dataDir, { recursive: true, force: true }).catch(() => {});
   });
 
-  it("la colonne harness existe et refuse une valeur inconnue (0307)", async () => {
-    await assert.rejects(platform.db.command("update public.internal_agents set harness = 'autre' where id = $1", [id.agent]));
+  it("l'ancien moteur est retiré (0314) : ni file de ticks, ni état de run, ni choix de moteur", async () => {
+    const tables = await platform.db.query<{ t: string | null }>(
+      "select to_regclass(x)::text as t from unnest(array['public.internal_agent_run_state', 'public.internal_agent_run_inbox', 'public.internal_agent_tool_outputs', 'public.internal_agent_call_ledger']) as x");
+    assert.ok(tables.every((r) => r.t === null), JSON.stringify(tables));
+    const fns = await platform.db.query("select 1 from pg_proc where proname in ('drain_agent_ticks', 'agent_tick_enqueue', 'agent_run_wake')");
+    assert.equal(fns.length, 0);
+    await assert.rejects(platform.db.query("select harness from public.internal_agents limit 1"));
+    const meta = await one<{ run_meta: unknown }>("select run_meta from public.internal_agent_runs limit 0");
+    assert.equal(meta, undefined, "run_meta existe (0313)");
   });
 
   it("un tour de chat : run, timeline, message de l'agent, consommation et session écrits en base", async () => {
@@ -134,10 +141,11 @@ describe("harnais OpenCode sur la plateforme locale (HTTP ↔ OpenCode ↔ Postg
     }
     assert.equal(run?.status, "succeeded");
     assert.equal(run?.final_output, "Léa Martin gère Acme.");
-    // L'agent FounderOS : le prompt de buildSystemPrompt, le modèle de la plateforme.
+    // L'agent FounderOS : son prompt (buildAgentSystem) et le contexte du run, le modèle de la plateforme.
     assert.equal(llm.requests[0].model, "e2e-std");
     const system = JSON.stringify((llm.requests[0].messages as Array<{ role: string; content: unknown }>).filter((m) => m.role === "system"));
-    assert.match(system, /You are Ops/);
+    assert.match(system, /Tu es Ops/);
+    assert.match(system, /<run_context mode=\\"chat\\">/);
     assert.doesNotMatch(system, /coding agent harness/);
     assert.ok(llm.annex.every((a) => a.model === "e2e-light"), "les titres sur le palier léger");
     assert.equal(run?.live_output, null);
@@ -148,7 +156,9 @@ describe("harnais OpenCode sur la plateforme locale (HTTP ↔ OpenCode ↔ Postg
 
     const events = await platform.db.query<{ kind: string; payload: { tool?: string } }>(
       "select kind, payload from public.internal_agent_run_events where run_id = $1 order by created_at", [out.run_id]);
-    assert.deepEqual(events.map((e) => `${e.kind}:${e.payload.tool}`), ["status:undefined", "tool_call:founderos_lookup_client", "tool_result:founderos_lookup_client"]);
+    const tools = events.filter((e) => e.kind === "tool_call" || e.kind === "tool_result").map((e) => `${e.kind}:${e.payload.tool}`);
+    assert.deepEqual(tools, ["tool_call:founderos_lookup_client", "tool_result:founderos_lookup_client"]);
+    assert.equal(events[0].kind, "status", "le moteur et le modèle du tour, en premier");
 
     const reply = await one<{ content: string; run_id: string }>(
       "select content, run_id from public.internal_agent_messages where conversation_id = $1 and role = 'assistant'", [id.conv]);

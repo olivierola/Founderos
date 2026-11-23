@@ -44,14 +44,20 @@ export function memoryStore(seed: {
       const r = [...runs].reverse().find((x) => x.conversation_id === conversationId && x.status === "running");
       return r ? { runId: r.id, sessionId: r.opencode_session_id } : null;
     },
-    createRun: async ({ agent, conversationId, sessionId }) => {
-      const id = `run-${++n}`;
-      runs.push({ id, agent_id: agent.id, conversation_id: conversationId, opencode_session_id: sessionId, status: "running" });
+    createRun: async ({ agent, conversationId, sessionId, runId, meta }) => {
+      const existing = runId ? runs.find((r) => r.id === runId) : undefined;
+      if (existing) {
+        Object.assign(existing, { status: "running", opencode_session_id: sessionId, ...(meta ? { run_meta: meta } : {}) });
+        return existing.id;
+      }
+      const id = runId ?? `run-${++n}`;
+      runs.push({ id, agent_id: agent.id, conversation_id: conversationId, opencode_session_id: sessionId, status: "running", run_meta: meta ?? {} });
       return id;
     },
     runningRuns: async () => runs.filter((r) => r.status === "running").map((r): BoundRun => ({
       runId: r.id, sessionId: r.opencode_session_id, agentId: r.agent_id,
       workspaceId: "ws", projectId: "pj", conversationId: r.conversation_id,
+      kind: ((r.run_meta as { kind?: string } | undefined)?.kind ?? "chat") as BoundRun["kind"], meta: (r.run_meta ?? {}) as Record<string, unknown>,
     })),
     cancelledAmong: async (ids) => runs.filter((r) => ids.includes(r.id) && r.status === "cancelled").map((r) => r.id),
     insertEvent: async (runId, _agentId, kind, payload) => { events.push({ runId, kind, payload }); },

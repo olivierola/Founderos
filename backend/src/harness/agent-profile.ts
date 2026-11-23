@@ -1,9 +1,10 @@
 // Ce qui fait d'un agent FounderOS un agent OpenCode (docs/harness-opencode,
 // phase 2) : son prompt système, sa connexion au modèle, ses paliers.
 //
-//   prompt     — le même constructeur que l'ancien moteur (buildSystemPrompt) :
-//                identité, entreprise, caractère, consignes, règles de réponse.
-//                La mémoire et les skills arrivent avec le plugin de contexte.
+//   prompt     — buildAgentSystem (agents/prompt.ts) : identité, entreprise,
+//                âme, consignes, doctrines, préférences, outils et règles du
+//                harnais. Ce qui dépend de la tâche (mémoire, skills, travail
+//                récent, mode, heure) vient du contexte de chaque run (runs.ts).
 //   connexion  — son connecteur AI Ops s'il en a un (URL + clé déchiffrée),
 //                sinon la connexion par défaut de la plateforme (LLM_UPSTREAM,
 //                OpenRouter en local).
@@ -24,9 +25,8 @@ import {
 import { classifyRequest, detectNeed } from "../edge/_shared/model-router.ts";
 import { freeRoutes, openrouterFreeOnly } from "../edge/_shared/openrouter-catalog.ts";
 import { loadSelfModel } from "../edge/_shared/self-model.ts";
-import {
-  buildSystemPrompt, loadAgentAndTools, loadCompanySection, type AgentRow,
-} from "../edge/internal-agent-run/index.ts";
+import { loadActivatedSkills, loadAgentAndTools, type AgentRow } from "../agents/context.ts";
+import { buildAgentSystem, isSecurityAgent, loadCompanySection } from "../agents/prompt.ts";
 
 /** Le fournisseur et l'agent OpenCode d'une instance (une instance = un agent). */
 export const PROVIDER_ID = "founderos";
@@ -115,14 +115,15 @@ async function connectionOf(admin: SupabaseClient, agent: AgentRow): Promise<{ c
 /** Le profil complet d'un agent : relu à chaque tour (il peut avoir changé). */
 export async function loadAgentProfile(admin: SupabaseClient, agentId: string): Promise<AgentProfile> {
   const { agent } = await loadAgentAndTools(agentId);
-  const [company, selfModel, link] = await Promise.all([
+  const [company, selfModel, link, skills] = await Promise.all([
     loadCompanySection(admin as never, agent).catch(() => null),
     loadSelfModel(admin as never, agent as never).catch(() => ""),
     connectionOf(admin, agent),
+    loadActivatedSkills(admin as never, agent.id).catch(() => []),
   ]);
-  const { prompt } = buildSystemPrompt(
-    agent, BUILTIN_CAPABILITIES, "chat", "", "", [], "", false, "", undefined, false, company, undefined, selfModel,
-  );
+  const prompt = buildAgentSystem(agent, BUILTIN_CAPABILITIES, {
+    company, selfModel, securityDoctrine: isSecurityAgent(skills as never),
+  });
   const steps = Number(agent.max_steps);
   return {
     agent,
@@ -173,4 +174,16 @@ export async function chooseTurnModel(
   ).catch(() => null);
   const tier = judged ?? cls.model;
   return { model: modelForRoute(profile, tier, need), tier, need };
+}
+
+/** La connexion par défaut de la plateforme et ses routes (hors agent) : celle
+ *  des tours éphémères (assistant du cockpit, widget public, rédacteur…). */
+export async function platformConnection(): Promise<{ connection: AgentConnection; routes: Record<string, string> }> {
+  const up = pinnedUpstream();
+  if (!up) throw new Error("aucune connexion LLM par défaut (LLM_UPSTREAM)");
+  const openrouter = up.kind === "openrouter";
+  const routes = { ...(upstreamRoutes(up) as Record<string, string>) };
+  routes.standard ??= up.model;
+  const { apiKey, rest } = splitAuth(await llmAuthHeaders(`${up.baseUrl}/chat/completions`, ""));
+  return { connection: { baseURL: up.baseUrl.replace(/\/+$/, ""), apiKey, headers: rest, openrouter, source: "platform" }, routes };
 }

@@ -58,9 +58,9 @@ describe("un tour, une seule personne", () => {
 
   it("pendant un tour, la passerelle ne change pas l'auteur du fil", async () => {
     const binding = { channel_id: "c", external_channel_ref: "C1", external_user_ref: "U_BOB" };
-    const busy = fakeAdmin({ internal_agent_run_state: [{ run_id: "r1" }] });
+    const busy = fakeAdmin({ internal_agent_runs: [{ id: "r1" }] });
     assert.deepEqual(await bindingForUpdate(busy.admin, "conv", binding), { channel_id: "c", external_channel_ref: "C1" });
-    const idle = fakeAdmin({ internal_agent_run_state: [] });
+    const idle = fakeAdmin({ internal_agent_runs: [] });
     assert.deepEqual(await bindingForUpdate(idle.admin, "conv", binding), binding);
   });
 

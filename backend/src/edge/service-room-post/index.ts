@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/service-room-post/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { defineHandler } from "../../compat/index.ts";
 
 // service-room-post — multi-agent room turn. The human posts into a shared room
@@ -10,22 +8,17 @@ import { defineHandler } from "../../compat/index.ts";
 // service_room_messages.
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
 import { createServiceClient, createUserClient } from "../_shared/supabase-admin.ts";
-import { callAi, type ChatMessage } from "../_shared/ai.ts";
-import { type InternalToolContext, type AgentToolRow, type ArtifactDraft } from "../_shared/internal-agent-tools.ts";
-import { runParallelSubagents } from "../_shared/subagents.ts";
-import { classifyTier, modelForTier, resolveProvider } from "../_shared/model-router.ts";
+import { callAi } from "../_shared/ai.ts";
+import { type ArtifactDraft } from "../_shared/internal-agent-tools.ts";
+import { resolveProvider } from "../_shared/model-router.ts";
 import {
   routeTurn, ensureAgents, createMission, createEmptyMission, advanceRoomMission, logMissionEvent,
-  buildRoomSystemPrompt, postSystemMessage,
+  buildRoomContext, postSystemMessage,
   type RoomRef, type RosterAgent,
 } from "../_shared/room-orchestrator.ts";
 import { insertArtifact, generateArtifactImage, isDocKind } from "../_shared/artifact-content.ts";
 import { issueRefPrefixes, looksLikeWorkspaceAdmin } from "../_shared/assistant-ops.ts";
-import { normalizeAutonomy } from "../_shared/policyguard.ts";
 import { describeOutcome, feedbackCue, learnFromFeedback, learnInBackground } from "../_shared/agent-learning.ts";
-import {
-  loadCompanyContext, renderCompanySection, type CompanyContext,
-} from "../_shared/company-context.ts";
 
 type Admin = ReturnType<typeof createServiceClient>;
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
@@ -598,97 +591,24 @@ async function runResponder(
     .eq("id", agentId).maybeSingle();
   if (!agent) throw new Error("Agent introuvable");
   const a = agent as AgentRow;
-  // Each agent answers on ITS OWN provider — a room turn is the same agent as
-  // its direct chat, and must not silently run on a different vendor.
-  const agentProvider = resolveProvider(a.model);
-  const { data: toolRows } = await admin.from("internal_agent_tools")
-    .select("id, kind, name, description, config, enabled, requires_approval").eq("agent_id", agentId);
-
-  // Create the turn run UP-FRONT (not lazily) so the UI can show this agent's
-  // LIVE activity — click the working agent → floating drawer with its timeline,
-  // sub-agents and deliverables. The placeholder message points at it; steps are
-  // streamed to run_events; a killed turn is reconciled by cron.
+  // Le run du tour, créé tout de suite : l'interface montre l'activité de
+  // l'agent en direct (son fil d'étapes, ses livrables) depuis le message en
+  // attente, qui pointe vers lui.
   const { data: tr } = await admin.from("internal_agent_runs").insert({
     agent_id: a.id, workspace_id: room.workspace_id, project_id: room.project_id,
     run_kind: "primary", status: "running", started_at: new Date().toISOString(),
     triggered_by: a.created_by ?? null,
   }).select("id").single();
   const turnRunId: string | null = (tr as { id: string } | null)?.id ?? null;
-  if (turnRunId) await admin.from("service_room_messages").update({ run_id: turnRunId }).eq("id", placeholderId);
-  const logRunEvent = (kind: string, payload: Record<string, unknown>) =>
-    turnRunId
-      ? admin.from("internal_agent_run_events").insert({ run_id: turnRunId, agent_id: a.id, kind, payload }).then(() => {}, () => {})
-      : Promise.resolve();
+  if (!turnRunId) {
+    await admin.from("service_room_messages").update({
+      status: "failed", content: "⚠️ Impossible de démarrer le run.",
+    }).eq("id", placeholderId);
+    return;
+  }
+  await admin.from("service_room_messages").update({ run_id: turnRunId }).eq("id", placeholderId);
 
-  // Room-scoped tool context (cloud-ish: no sandbox). Captures render_ui blocks
-  // and created deliverables so we can attach them to the agent's room message.
-  const uiBlocks: Array<Record<string, unknown>> = [];
-  const ctx: InternalToolContext = {
-    admin, workspaceId: room.workspace_id, projectId: room.project_id,
-    agentId: a.id, agentName: a.name,
-    collaborationEnabled: true, autopilot: false, runId: turnRunId,
-    // Same autonomy as in its direct chat (0266): a room is not a loophole.
-    autonomy: normalizeAutonomy((a as { autonomy_level?: string | null }).autonomy_level),
-    missionMode: false, delegationDepth: 0,
-    serviceDashboardId: a.service_dashboard_id ?? room.dashboard_id,
-    serviceRoomId: room.id,
-    userId: a.created_by ?? null,
-    isOrchestrator: a.is_orchestrator === true,
-    actingUserId: requestedBy,
-    createDeliverable: async (d) => {
-      const { data } = await admin.from("internal_agent_deliverables").insert({
-        agent_id: a.id, run_id: turnRunId, kind: d.kind, name: d.name, content: d.content, summary: d.summary,
-      }).select("id").single();
-      uiBlocks.push({ component: "deliverable", props: { id: (data as { id: string } | null)?.id, name: d.name, kind: d.kind, agentId: a.id } });
-      await logRunEvent("status", { message: `Livrable créé : ${d.name}` });
-    },
-    createArtifact: (artifact: ArtifactDraft) => createRoomArtifact(admin, room, a.created_by, artifact, uiBlocks),
-    requestApproval: async () => "approval-skipped-in-room",
-    // deno-lint-ignore no-explicit-any
-    logEvent: (async (kind: string, payload: any) => {
-      if (kind === "ui" && payload?.block) uiBlocks.push(payload.block);
-      else await logRunEvent(kind, payload ?? {});
-    }) as InternalToolContext["logEvent"],
-    isCancelled: async () => false,
-  };
-
-  // Parallel sub-agents: a room turn can fan INDEPENDENT subtasks out to
-  // ephemeral sub-agents (same shared engine as the agent chat). They attach to
-  // the turn run created above, so the UI renders the instance cards.
-  // Essaim: only expose the fan-out when the owner left it on. The tool is
-  // registered from ctx.swarmEnabled below, so keep the two in sync.
-  ctx.swarmEnabled = a.swarm_enabled !== false;
-  // Mémoïsé : lu seulement si un fan-out a effectivement lieu.
-  let childCompany: Promise<CompanyContext | null> | null = null;
-  if (ctx.swarmEnabled && turnRunId) ctx.spawnParallel = async (subtasks) => {
-    return await runParallelSubagents({
-      admin, parentRunId: turnRunId,
-      agentId: a.id, workspaceId: room.workspace_id, projectId: room.project_id, createdBy: a.created_by ?? null,
-      tools: (toolRows ?? []) as AgentToolRow[], provider: agentProvider, temperature: a.temperature ?? 0.4,
-      makeChildContext: (childRunId) => ({ ...ctx, runId: childRunId, isSubagent: true, spawnParallel: undefined }),
-      // Un sous-agent de room hérite de l'employeur comme le ferait un
-      // sous-agent de mission : le ton et les non-négociables de l'entreprise
-      // s'appliquent à ce qu'il produit. Chargé au premier enfant, partagé
-      // ensuite — une vague de huit ne paie qu'une lecture.
-      buildChildSystem: async (cap) => {
-        const comp = renderCompanySection(
-          await (childCompany ??= loadCompanyContext(admin, room.project_id, {
-            agentId: a.id, dashboardId: a.service_dashboard_id ?? room.dashboard_id,
-          })),
-          "", 900,
-        );
-        return [
-          `You are ${a.name}${a.persona ? ` — ${a.persona}` : ""}, focused on a single subtask for the "${room.title}" room.`,
-          comp.body ? `## L'entreprise pour laquelle tu travailles\n${comp.body}` : "",
-          a.instructions ? `Your instructions:\n${a.instructions}` : "",
-          "Your tools:", cap,
-        ].filter(Boolean).join("\n");
-      },
-      maxConcurrency: a.swarm_max_concurrency ?? undefined,
-    }, subtasks);
-  };
-
-  // Build the shared-thread history from the responder's point of view.
+  // Le fil partagé, du point de vue de celui qui répond.
   const { data: msgs } = await admin.from("service_room_messages")
     .select("author_kind, agent_id, content, status").eq("room_id", room.id)
     .eq("status", "done").order("created_at", { ascending: true }).limit(40);
@@ -696,65 +616,39 @@ async function runResponder(
   for (const p of participantIds) nameCache.set(p, "");
   const { data: agentNames } = await admin.from("internal_agents").select("id, name").in("id", participantIds.length ? participantIds : [a.id]);
   for (const an of (agentNames ?? []) as Array<{ id: string; name: string }>) nameCache.set(an.id, an.name);
-
-  const history: ChatMessage[] = ((msgs ?? []) as Array<{ author_kind: string; agent_id: string | null; content: string }>)
+  const lines = ((msgs ?? []) as Array<{ author_kind: string; agent_id: string | null; content: string }>)
     .filter((m) => m.content.trim())
     .map((m) => {
-      if (m.author_kind === "user") return { role: "user", content: `[Utilisateur] ${m.content}` } as ChatMessage;
-      if (m.agent_id === a.id) return { role: "assistant", content: m.content } as ChatMessage;
-      return { role: "user", content: `[${nameCache.get(m.agent_id ?? "") || "Agent"}] ${m.content}` } as ChatMessage;
+      if (m.author_kind === "user") return `[Utilisateur] ${m.content}`;
+      if (m.agent_id === a.id) return `[Toi] ${m.content}`;
+      return `[${nameCache.get(m.agent_id ?? "") || "Agent"}] ${m.content}`;
     });
+  const last = lines.pop() ?? "";
+  const text = [
+    lines.length ? `# Le fil de la salle (du plus ancien au plus récent)\n${lines.map((l) => l.slice(0, 1500)).join("\n\n")}` : "",
+    `# Le message auquel tu réponds\n${last}`,
+  ].filter(Boolean).join("\n\n");
 
-  // The prompt compiler owns the shape: canonical section order, budgeted
-  // knowledge, one place that decides what a room turn sees. The DURABLE tick
-  // engine (internal-agent-run) rebuilds the real toolset + executor and runs
-  // the loop, so a long room turn survives the edge wall-clock.
-  const company = await loadCompanyContext(admin, room.project_id, {
-    agentId: a.id,
-    dashboardId: a.service_dashboard_id ?? room.dashboard_id,
-  });
-  const system = buildRoomSystemPrompt({
-    admin, agent: a as RosterAgent,
-    room: { id: room.id, dashboard_id: room.dashboard_id, workspace_id: room.workspace_id, project_id: room.project_id, title: room.title },
-    dashboardName, toolRows: (toolRows ?? []) as AgentToolRow[],
-    extraContext: missionId
-      ? "Cette conversation appartient à une mission en cours de la room : tiens-en compte et reste dans son périmètre."
-      : undefined,
-    company,
-  });
-
-  const messages: ChatMessage[] = [{ role: "system", content: system }, ...history];
-  const model = modelForTier(classifyTier(history.at(-1)?.content ?? "", { mode: "chat" }), agentProvider);
-
-  if (!turnRunId) {
-    await admin.from("service_room_messages").update({
-      status: "failed", content: "⚠️ Impossible de démarrer le run.",
-    }).eq("id", placeholderId);
-    return;
+  try {
+    const { requireRuntime, startAgentRun } = await import("../../harness/runs.ts");
+    await startAgentRun(await requireRuntime(), {
+      agentId: a.id, kind: "room", runId: turnRunId, text, via: "room",
+      // Les outils d'administration de l'assistant agissent avec le rôle de la
+      // personne qui a écrit dans la salle.
+      actingUserId: requestedBy,
+      extraContext: buildRoomContext({
+        agent: a as RosterAgent,
+        room: { id: room.id, dashboard_id: room.dashboard_id, workspace_id: room.workspace_id, project_id: room.project_id, title: room.title },
+        dashboardName,
+        extraContext: missionId
+          ? "Cette conversation appartient à une mission en cours de la salle : tiens-en compte et reste dans son périmètre."
+          : undefined,
+      }),
+      meta: { room: { room_id: room.id, placeholder_id: placeholderId, requested_by: requestedBy } },
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await admin.from("internal_agent_runs").update({ status: "failed", finished_at: new Date().toISOString(), error_message: msg.slice(0, 500) }).eq("id", turnRunId);
+    await admin.from("service_room_messages").update({ status: "failed", content: `⚠️ ${msg}` }).eq("id", placeholderId);
   }
-
-  // Run on the DURABLE tick engine (same as agent chats): persist resumable state
-  // + enqueue a tick, instead of executing inline in this edge invocation. A long
-  // room turn (analyse + sourcing + rapport) now survives the edge wall-clock —
-  // pg_cron drains ticks server-side. The tick loop finalises back to THIS
-  // placeholder via meta.room (finalizeRoomSuccess), attaching UI blocks +
-  // deliverable cards.
-  await admin.from("internal_agent_run_state").upsert({
-    run_id: turnRunId,
-    mode: "chat",
-    agent_id: a.id,
-    conversation_id: null,
-    mission_id: null,
-    messages,
-    round: 0,
-    max_rounds: 400,
-    provider: "deepseek",
-    model,
-    processing_until: null,
-    last_input_at: new Date().toISOString(),
-    meta: { room: { room_id: room.id, placeholder_id: placeholderId, requested_by: requestedBy } },
-  });
-  await admin.rpc("agent_tick_enqueue", { p_run_id: turnRunId });
-  // Le tick part maintenant plutôt qu'au prochain passage du drainer (10 s).
-  await admin.rpc("drain_agent_ticks").then(() => {}, () => {});
 }

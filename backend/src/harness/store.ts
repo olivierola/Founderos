@@ -18,6 +18,9 @@ export interface HarnessAgent {
   harness: "legacy" | "opencode";
 }
 
+/** Ce qu'un run sert : une conversation, une mission, une salle, un workflow, un collègue. */
+export type RunKind = "chat" | "mission" | "room" | "workflow" | "a2a";
+
 export interface BoundRun {
   runId: string;
   sessionId: string;
@@ -25,6 +28,12 @@ export interface BoundRun {
   workspaceId: string;
   projectId: string;
   conversationId: string | null;
+  /** La personne qui pilote ce tour (auteur du message), pour les outils qui agissent en son nom. */
+  actingUserId?: string | null;
+  /** Ce que sert le run ; chat par défaut. */
+  kind?: RunKind;
+  /** L'état métier du run (internal_agent_runs.run_meta, 0313). */
+  meta?: Record<string, unknown>;
 }
 
 export interface UsageRow {
@@ -42,7 +51,7 @@ export interface UsageRow {
 }
 
 export interface HarnessStore {
-  /** L'agent et son moteur ; null s'il n'existe pas ou que la colonne manque (0307 non jouée). */
+  /** L'agent ; null s'il n'existe pas. */
   agent(agentId: string): Promise<HarnessAgent | null>;
   hasAgentAccess(agentId: string, userId: string): Promise<boolean>;
   /** La conversation de cet agent, ou null. */
@@ -52,7 +61,16 @@ export interface HarnessStore {
   recentMessages(conversationId: string, limit: number): Promise<Array<{ role: string; content: string }>>;
   /** Le run OpenCode encore en cours sur cette conversation. */
   activeRun(conversationId: string): Promise<{ runId: string; sessionId: string } | null>;
-  createRun(input: { agent: HarnessAgent; conversationId: string | null; sessionId: string; via: string }): Promise<string>;
+  /** Le run de cette conversation qui attend la réponse à une question de l'agent (formulaire OpenCode). */
+  pendingQuestion?(conversationId: string): Promise<{
+    runId: string; sessionId: string; formId: string;
+    fields: Array<{ key: string; options?: string[]; multiple?: boolean }>;
+  } | null>;
+  /** Crée le run, ou reprend celui que l'appelant a déjà créé (runId : mission en file, salle, workflow). */
+  createRun(input: {
+    agent: HarnessAgent; conversationId: string | null; sessionId: string; via: string;
+    runId?: string | null; meta?: Record<string, unknown>;
+  }): Promise<string>;
   /** Les runs OpenCode en cours (pour les réattacher au redémarrage). */
   runningRuns(): Promise<BoundRun[]>;
   /** Parmi ces runs, ceux que quelqu'un a annulés. */
@@ -72,10 +90,9 @@ export function supabaseStore(
   return {
     async agent(agentId) {
       const { data, error } = await admin.from("internal_agents")
-        .select("id, name, workspace_id, project_id, harness").eq("id", agentId).maybeSingle();
+        .select("id, name, workspace_id, project_id").eq("id", agentId).maybeSingle();
       if (error || !data) return null;
-      const a = data as HarnessAgent;
-      return { ...a, harness: a.harness === "opencode" ? "opencode" : "legacy" };
+      return { ...(data as Omit<HarnessAgent, "harness">), harness: "opencode" };
     },
     async hasAgentAccess(agentId, userId) {
       const { data } = await admin.rpc("has_internal_agent_access", { p_agent_id: agentId, p_user_id: userId });
@@ -104,23 +121,49 @@ export function supabaseStore(
       const r = data as { id: string; opencode_session_id: string } | null;
       return r ? { runId: r.id, sessionId: r.opencode_session_id } : null;
     },
-    async createRun({ agent, conversationId, sessionId, via }) {
+    async pendingQuestion(conversationId) {
+      const { data } = await admin.from("internal_agent_runs")
+        .select("id, opencode_session_id, pending_question").eq("conversation_id", conversationId).eq("status", "awaiting_input")
+        .not("opencode_session_id", "is", null).order("started_at", { ascending: false }).limit(1).maybeSingle();
+      const r = data as { id: string; opencode_session_id: string; pending_question?: { form_id?: string; fields?: unknown } | null } | null;
+      const formId = r?.pending_question?.form_id;
+      if (!r || !formId) return null;
+      const fields = Array.isArray(r.pending_question?.fields) ? r.pending_question!.fields as Array<{ key: string; options?: string[]; multiple?: boolean }> : [];
+      return { runId: r.id, sessionId: r.opencode_session_id, formId, fields };
+    },
+    async createRun({ agent, conversationId, sessionId, via, runId, meta }) {
+      if (runId) {
+        const { data: prior } = await admin.from("internal_agent_runs").select("started_at").eq("id", runId).maybeSingle();
+        const { error } = await admin.from("internal_agent_runs").update({
+          status: "running", opencode_session_id: sessionId,
+          ...((prior as { started_at?: string | null } | null)?.started_at ? {} : { started_at: new Date().toISOString() }),
+          ...(conversationId ? { conversation_id: conversationId } : {}),
+          ...(meta ? { run_meta: meta } : {}),
+        }).eq("id", runId);
+        if (error) throw new Error(`run non repris : ${error.message}`);
+        return runId;
+      }
       const { data, error } = await admin.from("internal_agent_runs").insert({
         agent_id: agent.id, workspace_id: agent.workspace_id, project_id: agent.project_id,
         conversation_id: conversationId, status: "running", started_at: new Date().toISOString(),
-        triggered_via: via, opencode_session_id: sessionId,
+        triggered_via: via, opencode_session_id: sessionId, ...(meta ? { run_meta: meta } : {}),
       }).select("id").single();
       if (error || !data) throw new Error(`run non créé : ${error?.message ?? "aucune ligne"}`);
       return (data as { id: string }).id;
     },
     async runningRuns() {
       const { data } = await admin.from("internal_agent_runs")
-        .select("id, opencode_session_id, agent_id, workspace_id, project_id, conversation_id")
+        .select("id, opencode_session_id, agent_id, workspace_id, project_id, conversation_id, run_meta")
         .eq("status", "running").not("opencode_session_id", "is", null).limit(500);
-      return ((data ?? []) as Array<Record<string, string | null>>).map((r) => ({
-        runId: r.id!, sessionId: r.opencode_session_id!, agentId: r.agent_id!,
-        workspaceId: r.workspace_id!, projectId: r.project_id!, conversationId: r.conversation_id ?? null,
-      }));
+      return ((data ?? []) as Array<Record<string, unknown>>).map((r) => {
+        const meta = (r.run_meta ?? {}) as Record<string, unknown>;
+        return {
+          runId: String(r.id), sessionId: String(r.opencode_session_id), agentId: String(r.agent_id),
+          workspaceId: String(r.workspace_id), projectId: String(r.project_id),
+          conversationId: (r.conversation_id as string | null) ?? null,
+          kind: (meta.kind as RunKind | undefined) ?? "chat", meta,
+        };
+      });
     },
     async cancelledAmong(runIds) {
       if (!runIds.length) return [];

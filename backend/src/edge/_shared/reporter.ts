@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/reporter.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Le Rédacteur — the one agent that writes the reports.
 //
@@ -20,13 +18,10 @@
 // contract counts deliverables by run_id.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { callAiWithTools, type ChatMessage, type ToolDef } from "./ai.ts";
+import type { ChatMessage, ToolDef } from "./ai.ts";
 import { logLlmUsage } from "./llm-tracking.ts";
 import {
-  blockKey, sameSubstance, tidyBlocks, buildReportHtml, loadReportAssets, normalizeReportDoc, reportPreviewText, reportShape,
-  resolveSourceIcons, validateBlock, validateReportDoc,
-  ACCENTS, BANNER_STYLES, BLOCK_TYPES, CHART_TYPES, REPEATABLE_BLOCKS, TYPEFACES,
-  type ReportBlock, type ReportDoc, type ReportSource,
+  blockKey, sameSubstance, tidyBlocks, buildReportHtml, loadReportAssets, normalizeReportDoc, reportPreviewText, reportShape, resolveSourceIcons, validateBlock, validateReportDoc, ACCENTS, BANNER_STYLES, BLOCK_TYPES, CHART_TYPES, REPEATABLE_BLOCKS, TYPEFACES, type ReportBlock, type ReportDoc, type ReportSource,
 } from "./report-artisan.ts";
 
 export const REPORT_BUCKET = "agent-reports";
@@ -539,21 +534,20 @@ export async function writeReport(deps: ReporterDeps, brief: ReportBrief): Promi
     return out;
   };
 
-  const provider = reporter.model === "groq" ? "groq" : "deepseek";
   const messages: ChatMessage[] = [
     { role: "system", content: buildSystemPrompt(reporter, skillPrompt, brief) },
     { role: "user", content: buildBriefMessage(brief, deps.requesterName) },
   ];
 
   try {
-    const result = await callAiWithTools({
-      provider,
+    // Le Rédacteur tourne sur le harnais (tour éphémère, ses quatre outils).
+    const { callToolLoop } = await import("../../harness/ephemeral.ts");
+    const result = await callToolLoop("reporter", {
       messages,
       tools: toolDefs(),
       executor,
-      temperature: reporter.temperature ?? 0.35,
-      maxTokens: 4000,
       maxRounds: REPORT_ROUNDS,
+      timeoutMs: 10 * 60_000,
       onNotice: async (n) => { await logChild("tool_error", { message: n.message, detail: n.detail }); },
     });
 
