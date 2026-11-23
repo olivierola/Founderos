@@ -51,7 +51,6 @@ export type DashboardTabSlug =
 
 export interface AgentDefaults {
   model: string;
-  sandbox_mode: "cloud" | "runner" | "sandbox" | "hybrid";
   max_steps: number;
   max_run_cost_usd: number;
   swarm_enabled: boolean;
@@ -123,7 +122,6 @@ export type TeamLifeMode = "off" | "calm" | "active";
 
 export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
   model: "deepseek",
-  sandbox_mode: "cloud",
   max_steps: 8,
   max_run_cost_usd: 0.5,
   swarm_enabled: true,
@@ -436,7 +434,6 @@ export async function applyAgentDefaults(
     swarm_enabled: d.swarm_enabled,
   };
   if (scope === "blank") {
-    upd.sandbox_mode = d.sandbox_mode;
     upd.max_steps = d.max_steps;
   }
   // `requires_approval` is NOT set here: it is a per-tool column

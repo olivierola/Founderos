@@ -105,7 +105,7 @@ export async function instantiateTemplate(
   const uid = authData.user?.id ?? ctx.userId;
 
   // Core columns guaranteed by the base schema. We add the v2 columns
-  // (max_steps / sandbox_mode / studio) in a follow-up update so a stale
+  // (max_steps / studio) in a follow-up update so a stale
   // PostgREST schema cache on those columns can never block agent creation.
   const base = {
     workspace_id: ctx.workspaceId,
@@ -138,7 +138,7 @@ export async function instantiateTemplate(
   // Autonomy is deliberately NOT written here: approval is a per-TOOL flag
   // (internal_agent_tools.requires_approval, applied below) — internal_agents
   // has no such column, and naming it made PostgREST reject the whole update,
-  // silently dropping max_steps / sandbox_mode / studio with it.
+  // silently dropping max_steps / studio with it.
   const upd: Record<string, unknown> = { max_steps: template.max_steps };
   // L'âme part avec l'agent (0210) — mais dans l'update, pas dans l'insert de
   // base : un cache PostgREST en retard sur la colonne ferait échouer toute la
@@ -149,7 +149,6 @@ export async function instantiateTemplate(
   // de pré-écrites reviendrait à lui prêter des habitudes qu'il n'a jamais
   // exprimées, et l'agent les respecterait comme si elles venaient de lui.
   if (overrides.soul?.trim() || template.soul) upd.soul = overrides.soul?.trim() || template.soul;
-  if (template.sandboxMode) upd.sandbox_mode = template.sandboxMode;
   // Studio agents (vibe code / testing / simulation) — drives the premium
   // border and which session artifact renderer their deliverables get.
   if (template.studio) upd.studio = template.studio;

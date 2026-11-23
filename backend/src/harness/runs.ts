@@ -21,11 +21,13 @@ import { deriveContract, type SuccessContract } from "../edge/_shared/agent-loop
 import { learnInBackground } from "../edge/_shared/agent-learning.ts";
 import { claimTurn } from "../edge/_shared/turn-principal.ts";
 import {
-  COMPANION_NOTE, isCompanionConversation, loadActivatedSkills, loadAgentAndTools, loadRuntimeConfig,
-  makeToolContext, probeRunner, probeSandbox, type AgentRow,
+  COMPANION_NOTE, isCompanionConversation, loadActivatedSkills, loadAgentAndTools, type AgentRow,
 } from "../agents/context.ts";
+import { loadAgentMachine } from "../edge/_shared/team-machine.ts";
+import { teamMachineGuidance } from "../edge/_shared/team-machine-tools.ts";
 import {
-  buildRunContext, loadMemorySection, loadRecentWorkSection, loadTeamMemorySection, rankSkills, type RunMode,
+  buildRunContext, loadMemorySection, loadRecentWorkSection, loadTeamMemorySection, produceExecutionPlan, rankSkills,
+  type ExecutionPlan, type RunMode,
 } from "../agents/prompt.ts";
 import { learnFromChatMessage } from "../agents/finalize.ts";
 import { buildMissionPrompt, MISSION_COLUMNS, missionTaskText, type MissionRow } from "../agents/mission.ts";
@@ -74,37 +76,92 @@ export function focusOf(text: string): string {
   );
 }
 
-/** L'état des mondes d'exécution de l'agent : une note si l'un d'eux est injoignable. */
-async function infraNotes(admin: Admin, agent: AgentRow): Promise<string> {
-  if (agent.sandbox_mode === "cloud") return "";
-  const ctx = makeToolContext({ admin: admin as never, agent, runId: null, missionId: null, runtimeConfig: await loadRuntimeConfig(admin as never) });
-  const notes: string[] = [];
-  if (ctx.sandboxUrl) {
-    const down = await probeSandbox(ctx.sandboxUrl);
-    if (down) notes.push(`NOTE INFRA : la sandbox d'exécution est HORS LIGNE (${down}) ; ses outils sandbox_* sont indisponibles pour ce run.${ctx.hybrid ? " Utilise ceux du runner s'il répond." : " Si on te demande d'exécuter, dis que l'infrastructure locale doit être relancée."}`);
+/**
+ * Là où l'agent exécute : la machine de son équipe (ou la sienne), seul monde
+ * d'exécution. Ses consignes (dossier perso, dossiers protégés, coéquipiers)
+ * entrent dans le contexte du run ; sans machine, l'agent le sait et le dit.
+ */
+async function machineNotes(admin: Admin, agent: AgentRow): Promise<string> {
+  const machine = await loadAgentMachine(admin as never, agent).catch(() => null);
+  if (!machine) {
+    return "## Machine\nAucune machine d'équipe ne t'est attribuée : tu n'as ni commande, ni code, ni fichiers à exécuter. Si on te le demande, dis-le simplement : un humain peut t'en donner une (Machines, Attributions), pour toi seul ou pour ton équipe. N'utilise jamais le navigateur de la personne à la place.";
   }
-  if (ctx.runnerEnabled && ctx.runnerUrl) {
-    const down = await probeRunner(ctx.runnerUrl);
-    if (down) notes.push(`NOTE INFRA : le runner est HORS LIGNE (${down}) ; ses outils runner_* (navigateur, shell, code, fichiers) sont indisponibles pour ce run.${ctx.hybrid ? " Utilise ceux de la sandbox si elle répond." : " Si on te demande d'exécuter, dis qu'il doit être relancé."}`);
-  }
-  return notes.join("\n");
+  return ["## Ta machine (outil machine)", ...teamMachineGuidance(machine).map((l) => l.trim())].join("\n");
 }
 
-/** Le contexte d'un run, choisi pour sa tâche. */
-async function runContext(admin: Admin, agent: AgentRow, runId: string | null, mode: RunMode, task: string, extra: string[]): Promise<string> {
+/** Ce qu'un run sait au départ, choisi pour sa tâche : mémoire, équipe, skills, travail récent, machine. */
+async function gather(admin: Admin, agent: AgentRow, runId: string | null, task: string) {
   const focus = focusOf(task);
-  const [memory, teamMemory, skills, recentWork, infra] = await Promise.all([
+  const [memory, teamMemory, skills, recentWork, machine] = await Promise.all([
     loadMemorySection(admin as never, agent.id, focus || undefined).catch(() => ""),
     loadTeamMemorySection(admin as never, agent.project_id, agent.service_dashboard_id ?? null).catch(() => ""),
     loadActivatedSkills(admin as never, agent.id).catch(() => []),
     loadRecentWorkSection(admin as never, agent.id).catch(() => ""),
-    infraNotes(admin, agent).catch(() => ""),
+    machineNotes(admin, agent).catch(() => ""),
   ]);
   const skillBoost = await rankSkills({ admin: admin as never, workspaceId: agent.workspace_id, projectId: agent.project_id, runId }, skills as never, focus).catch(() => undefined);
+  return { focus, memory, teamMemory, skills, recentWork, machine, skillBoost };
+}
+
+/** Le contexte d'un run (<run_context>), à partir de ce qu'il sait au départ. */
+function contextOf(mode: RunMode, g: Awaited<ReturnType<typeof gather>>, extra: string[]): string {
   return buildRunContext({
-    mode, taskText: focus, memory, teamMemory, recentWork, skills: skills as never, skillBoost,
-    extra: [...extra, infra].filter((x) => x && x.trim()).join("\n\n"),
+    mode, taskText: g.focus, memory: g.memory, teamMemory: g.teamMemory, recentWork: g.recentWork,
+    skills: g.skills as never, skillBoost: g.skillBoost,
+    extra: [...extra, g.machine].filter((x) => x && x.trim()).join("\n\n"),
   });
+}
+
+async function runContext(admin: Admin, agent: AgentRow, runId: string | null, mode: RunMode, task: string, extra: string[]): Promise<string> {
+  return contextOf(mode, await gather(admin, agent, runId, task), extra);
+}
+
+/** Les outils que le planificateur peut citer : ceux du toolkit de l'agent, et le noyau. */
+function plannerTools(rt: HarnessRuntime, agentId: string): Array<{ name: string; description: string }> {
+  const core = [
+    { name: "grep", description: "chercher dans la base de connaissances par mots-clés" },
+    { name: "build_context", description: "lire les sources trouvées, ou une recherche sémantique" },
+    { name: "remember", description: "retenir un fait, une préférence, une connaissance d'équipe" },
+    { name: "todowrite", description: "tenir sa liste de tâches" },
+    { name: "question", description: "demander à la personne quand on ne peut pas avancer sans elle" },
+    { name: "subagent", description: "confier une tâche délimitée à un spécialiste" },
+  ];
+  const kit = rt.agents?.state.kits.get(agentId);
+  const tools = (kit?.tools ?? [])
+    .filter((t) => !core.some((c) => c.name === t.name))
+    .map((t) => ({ name: t.name, description: t.description.replace(/\s+/g, " ").slice(0, 400) }));
+  return [...core, ...tools];
+}
+
+/**
+ * Le plan préalable (ancien moteur, produceExecutionPlan) : avant d'agir, un
+ * modèle de raisonnement pose l'objectif, l'approche et 3 à 8 tâches. Il entre
+ * dans le contexte du run ; la liste de tâches du run en est amorcée (l'agent la
+ * tient ensuite avec todowrite). Sans plan (échec, demande trop simple), l'agent
+ * pose lui-même sa liste.
+ */
+async function planFor(rt: HarnessRuntime, agent: AgentRow, task: string, context: string) {
+  const planned = await produceExecutionPlan({
+    agent, toolDefs: plannerTools(rt, agent.id), taskText: task, contextText: context,
+  }).catch(() => null);
+  if (!planned) return null;
+  const block = [
+    "## Ton plan (préparé avant de commencer)",
+    planned.markdown,
+    "",
+    "Reprends ces tâches dans ta liste (todowrite) et exécute-les dans l'ordre. Ne t'en écarte que si un résultat l'impose, et dis-le.",
+  ].join("\n");
+  return { ...planned, block };
+}
+
+/** Le plan sur le run : l'événement « plan » et la liste de tâches amorcée. */
+async function recordPlan(admin: Admin, runId: string, agentId: string, planned: { plan: ExecutionPlan; markdown: string }) {
+  const todos = planned.plan.tasks.map((t, i) => ({ id: t.id, title: t.title.slice(0, 140), status: i === 0 ? "active" : "pending" }));
+  await admin.from("internal_agent_run_events").insert([
+    { run_id: runId, agent_id: agentId, kind: "plan", payload: { plan: planned.plan, markdown: planned.markdown } },
+    { run_id: runId, agent_id: agentId, kind: "todos", payload: { todos } },
+  ]).then(() => {}, () => {});
+  await admin.from("internal_agent_runs").update({ todos }).eq("id", runId).then(() => {}, () => {});
 }
 
 /** Un run qui ne part pas (garde-fou) : clos en échec, avec la raison là où on l'attend. */
@@ -168,16 +225,27 @@ export async function startAgentRun(rt: HarnessRuntime, input: AgentRunInput): P
     if (!continuation && trimmed.length <= 40 && SMALL_TALK.test(trimmed)) {
       extra.push("[FOCUS] Le dernier message n'est qu'une formule de politesse. Réponds brièvement et chaleureusement (une ou deux phrases), sans reprendre ni relancer aucune tâche antérieure et sans appeler d'outil. Si un travail est resté inachevé, mentionne-le en une phrase et demande s'il faut le reprendre.");
     }
+    const g = await gather(admin, row, null, text);
     let contract: SuccessContract | null = null;
-    if (trimmed.length >= 24 || continuation) {
-      contract = await deriveContract({ source: "chat", goal: trimmed.slice(0, 800), hasTodos: true }).catch(() => null);
+    let planned: Awaited<ReturnType<typeof planFor>> = null;
+    if ((trimmed.length >= 24 || continuation) && !SMALL_TALK.test(trimmed)) {
+      // Sur « continue », le planificateur voit le tour précédent : il planifie la suite, pas le tout.
+      const prevReply = continuation ? [...history].reverse().find((m) => m.role === "assistant")?.content ?? "" : "";
+      const planContext = [g.memory, g.teamMemory, prevReply ? `# Travail déjà en cours dans cette conversation (REPRENDS, ne recommence pas)\nTon tour précédent :\n${prevReply.slice(0, 1800)}` : ""]
+        .filter(Boolean).join("\n\n");
+      const planTask = continuation
+        ? `${trimmed}\n\n(La personne te demande de CONTINUER le travail en cours dans cette conversation. Planifie seulement les étapes restantes : vérifie d'abord ce qui existe, puis reprends à la première étape non faite.)`
+        : trimmed;
+      planned = await planFor(rt, row, planTask, planContext);
+      contract = await deriveContract({ source: "chat", goal: trimmed.slice(0, 800), doneWhen: planned?.plan.done_when ?? null, hasTodos: true }).catch(() => null);
     }
-    const context = await runContext(admin, row, null, "chat", text, extra);
+    const context = contextOf("chat", g, [...extra, planned?.block ?? ""]);
     const out = await startChatTurn(deps, {
       agent, conversationId, model: input.model, runContext: context,
       meta: { task: trimmed.slice(0, 2000), contract, ...(input.meta ?? {}) },
       actingUserId: input.actingUserId ?? null,
     });
+    if (planned) await recordPlan(admin, out.run_id, agent.id, planned);
     if (contract) {
       await admin.from("internal_agent_run_events").insert({
         run_id: out.run_id, agent_id: agent.id, kind: "loop",
@@ -209,13 +277,18 @@ export async function startAgentRun(rt: HarnessRuntime, input: AgentRunInput): P
     // Kanban : une mission qui tourne est « en cours ».
     await admin.from("internal_agent_missions").update({ board_column: "in_progress" }).eq("id", mission.id).in("board_column", ["backlog", "todo"]);
     const task = missionTaskText(mission);
+    const g = await gather(admin, row, r.id, task);
+    const planned = await planFor(rt, row, prompt, [
+      g.memory, g.teamMemory, g.recentWork ? `# Travail récent de cet agent (appuie-toi dessus, ne le refais pas)\n${g.recentWork}` : "",
+    ].filter(Boolean).join("\n\n"));
     const contract = await deriveContract({
       source: "mission", goal: `${mission.title} — ${String(mission.brief ?? "").slice(0, 600)}`,
+      doneWhen: planned?.plan.done_when ?? null,
       acceptanceCriteria: mission.acceptance_criteria,
       expectedDeliverables: Array.isArray(mission.expected_deliverables) ? mission.expected_deliverables as never : [],
       hasTodos: true,
     }).catch(() => null);
-    const context = await runContext(admin, row, r.id, "mission", task, input.extraContext ? [input.extraContext] : []);
+    const context = contextOf("mission", g, [input.extraContext ?? "", planned?.block ?? ""]);
     const out = await startTaskRun(deps, {
       agent, kind: "mission", runId: r.id, text: prompt, unattended: true, runContext: context,
       meta: { task: task.slice(0, 2000), mission_id: mission.id, contract, ...(input.meta ?? {}) },
@@ -226,6 +299,7 @@ export async function startAgentRun(rt: HarnessRuntime, input: AgentRunInput): P
       run_id: out.run_id, agent_id: agent.id, kind: "log",
       payload: { message: `Mission lancée : budget ${row.max_steps} étapes, ${row.max_run_cost_usd} $.` },
     }).then(() => {}, () => {});
+    if (planned) await recordPlan(admin, out.run_id, agent.id, planned);
     if (contract) {
       await admin.from("internal_agent_run_events").insert({
         run_id: out.run_id, agent_id: agent.id, kind: "loop",

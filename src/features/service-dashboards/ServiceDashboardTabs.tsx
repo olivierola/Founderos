@@ -86,7 +86,7 @@ export interface DashboardAgent {
   avatar_url: string | null; avatar_style: "avatar" | "orb" | null; accent_color: string | null;
   created_by: string | null; chat_enabled: boolean; mission_enabled: boolean;
   is_orchestrator: boolean; created_at: string; studio: StudioKind | null;
-  swarm_enabled: boolean | null; model: string | null; sandbox_mode: string | null;
+  swarm_enabled: boolean | null; model: string | null;
   /** Folder it is filed under (migration 0161), null when unfiled. */
   folder_id?: string | null;
   /** Only present on databases where the column was added. */

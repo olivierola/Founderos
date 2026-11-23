@@ -3717,7 +3717,6 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
   // hiérarchie n'existait que le temps d'une room ; persistée, elle devient une
   // arête du graphe d'entreprise et une ligne du contexte de l'agent.
   const [parentAgentId, setParentAgentId] = useState<string | null>(agent.parent_agent_id ?? null);
-  const [sandboxMode, setSandboxMode] = useState<"cloud" | "runner" | "sandbox" | "hybrid">(agent.sandbox_mode ?? "cloud");
   // Essaim (swarm): may the agent fan out to parallel sub-agents, and how many.
   const [swarmEnabled, setSwarmEnabled] = useState(agent.swarm_enabled ?? true);
   const [swarmMax, setSwarmMax] = useState(agent.swarm_max_concurrency ?? 8);
@@ -3805,7 +3804,6 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
           skills,
           collaboration_enabled: collabEnabled,
           parent_agent_id: parentAgentId,
-          sandbox_mode: sandboxMode,
           swarm_enabled: swarmEnabled,
           swarm_max_concurrency: Math.min(Math.max(Math.round(swarmMax) || 6, 2), 6),
           updated_at: new Date().toISOString(),
@@ -3892,41 +3890,13 @@ export function SettingsTab({ agent, embedded }: { agent: InternalAgent; embedde
           </SoftField>
           <AgentModelRoutes key={`${agent.id}:${agent.hosted_provider_id ?? ""}`} agent={agent} disabled={!isOwner} />
 
-          {/* One card per runtime — what it gives you, not how it works. The
-              prerequisites (runner connected, Docker up) surface as a single
-              note under the chosen one instead of three paragraphs each. */}
+          {/* Un agent exécute sur la machine de son équipe : il n'y a plus de
+              sandbox ni de runner à choisir. */}
           <SoftField label="Exécution">
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <SoftCardOption
-                active={sandboxMode === "cloud"} onClick={() => setSandboxMode("cloud")}
-                icon={Zap} title="Cloud" hint="Web, base, connecteurs. Rien à installer."
-              />
-              <SoftCardOption
-                active={sandboxMode === "runner"} onClick={() => setSandboxMode("runner")}
-                icon={Globe} title="Runner" hint="+ navigateur, terminal, fichiers."
-              />
-              <SoftCardOption
-                active={sandboxMode === "sandbox"} onClick={() => setSandboxMode("sandbox")}
-                icon={TerminalSquare} title="Sandbox" hint="+ conteneur Linux jetable, Jupyter."
-              />
-              <SoftCardOption
-                active={sandboxMode === "hybrid"} onClick={() => setSandboxMode("hybrid")}
-                icon={Workflow} title="Hybride" hint="Runner et sandbox, orchestrés."
-              />
-            </div>
-          </SoftField>
-
-          {sandboxMode !== "cloud" && (
-            <p className="flex items-center gap-2 rounded-xl bg-muted/50 px-3.5 py-2.5 text-xs text-muted-foreground">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-              {sandboxMode === "runner" ? "Nécessite le runner auto-hébergé connecté."
-                : sandboxMode === "sandbox" ? "Nécessite Docker sur la machine du runner."
-                : "Nécessite le runner ET la sandbox joignables."}
-              {sandboxMode === "sandbox" && agent.sandbox_url && (
-                <span className="ml-auto truncate font-mono text-[11px]">{agent.sandbox_url}</span>
-              )}
+            <p className="text-[13px] text-muted-foreground">
+              Sur la machine de son équipe, ou sur la sienne : commandes, fichiers, processus, navigateur. Elle se donne dans l'onglet Machines, Attributions.
             </p>
-          )}
+          </SoftField>
         </SettingsSection>
       )}
 

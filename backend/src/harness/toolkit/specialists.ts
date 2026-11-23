@@ -71,7 +71,7 @@ export const SPECIALISTS: SpecialistSpec[] = [
     instructions:
       "Tu es un analyste de données. Tu lis les données, tu calcules (en Python quand c'est utile), tu vérifies tes chiffres " +
       "et tu rends des conclusions chiffrées avec leur méthode. Tu signales les données manquantes ou douteuses.",
-    tools: ["run_code", "remote_files"],
+    tools: ["machine"],
     contextTypes: ["table", "company", "documents"],
     skillMatch: /data|donn|analy|stat|finance|kpi|sql|excel|spreadsheet/i,
   },
@@ -87,11 +87,11 @@ export const SPECIALISTS: SpecialistSpec[] = [
   },
   {
     id: "operateur",
-    description: "Travail technique sur une machine distante : code, commandes, fichiers, processus. Donne-lui l'objectif et le critère de réussite.",
+    description: "Travail technique sur la machine d'équipe : code, commandes, fichiers, processus. Donne-lui l'objectif et le critère de réussite.",
     instructions:
-      "Tu es un opérateur technique. Tu travailles sur la machine distante avec ses outils, par petites étapes vérifiées, " +
+      "Tu es un opérateur technique. Tu travailles sur la machine d'équipe avec l'outil machine, par petites étapes vérifiées, " +
       "tu lis les erreurs et tu corriges. Tu rends ce qui a été fait, ce qui marche (preuve à l'appui) et ce qui reste.",
-    tools: ["run_code", "remote_files", "process", "machine"],
+    tools: ["machine"],
     contextTypes: ["conversation", "documents"],
     skillMatch: /code|dev|devops|deploy|infra|linux|python|node|test|debug|kubernetes|docker/i,
   },

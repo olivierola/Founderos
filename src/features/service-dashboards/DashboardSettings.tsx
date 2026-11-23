@@ -61,13 +61,6 @@ const MODELS = [
   { id: "gpt-4", label: "GPT-4", hint: "Fallback" },
 ];
 
-const SANDBOX_MODES = [
-  { id: "cloud", label: "Cloud", hint: "Edge serverless, web, base, connecteurs" },
-  { id: "runner", label: "Runner", hint: "+ navigateur, shell et fichiers de votre machine" },
-  { id: "sandbox", label: "Sandbox", hint: "+ conteneur Linux complet" },
-  { id: "hybrid", label: "Hybride", hint: "Runner et sandbox, orchestrés" },
-] as const;
-
 interface Orchestrator {
   id: string; name: string; avatar_url: string | null; persona: string | null; instructions: string | null;
   model: string | null; temperature: number | null; max_steps: number | null; max_run_cost_usd: number | null;
@@ -481,21 +474,6 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
                       onChange={(e) => patch({ agent_defaults: { ...settings.agent_defaults, max_run_cost_usd: Number(e.target.value) } })} />
                   </Field>
                 </div>
-                <Field label="Environnement d'exécution">
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {SANDBOX_MODES.map((m) => (
-                      <button
-                        key={m.id} type="button"
-                        onClick={() => patch({ agent_defaults: { ...settings.agent_defaults, sandbox_mode: m.id } })}
-                        className={cn("rounded-xl border p-3 text-left transition-all",
-                          settings.agent_defaults.sandbox_mode === m.id ? "border-primary bg-primary/5 ring-1 ring-primary/30" : "border-border hover:border-primary/40")}
-                      >
-                        <div className="text-sm font-medium">{m.label}</div>
-                        <div className="mt-0.5 text-[11px] text-muted-foreground">{m.hint}</div>
-                      </button>
-                    ))}
-                  </div>
-                </Field>
                 <Row
                   icon={ShareNetworkIcon} label="Mode essaim autorisé"
                   desc="Sous-collaborateurs parallèles autorisés."

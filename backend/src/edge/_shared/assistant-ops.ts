@@ -148,12 +148,12 @@ export async function resolveService(a: OpsActor, ref: string): Promise<ServiceR
 }
 
 interface AgentDefaults {
-  model: string; sandbox_mode: string; max_steps: number;
+  model: string; max_steps: number;
   max_run_cost_usd: number; swarm_enabled: boolean; requires_approval: boolean;
 }
 // Miroir de DEFAULT_AGENT_DEFAULTS (src/features/service-dashboards/model.ts).
 const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
-  model: "deepseek", sandbox_mode: "cloud", max_steps: 8,
+  model: "deepseek", max_steps: 8,
   max_run_cost_usd: 0.5, swarm_enabled: true, requires_approval: false,
 };
 function agentDefaultsOf(s: ServiceRow | null): AgentDefaults {
@@ -466,7 +466,7 @@ const AGENT_PARAMS_DOC =
   "create: {name, role?, description?, instructions?, persona?, soul?, service?, connectors?: [slug], skills?: [slug|id|nom], " +
   "tools?: [{kind, name?, config?}], mcp_servers?: [nom|id], add_to_room?: bool (défaut vrai dans une room)}. " +
   "update: {agent, name?, description?, role?, persona?, instructions? (REMPLACE tout), append_instructions? (ajoute à la fin), " +
-  "soul?, preferences?, service?, model?, temperature?, max_steps?, sandbox_mode?, swarm_enabled?, chat_enabled?, mission_enabled?}. " +
+  "soul?, preferences?, service?, model?, temperature?, max_steps?, swarm_enabled?, chat_enabled?, mission_enabled?}. " +
   "add_tool: {agent, kind, name?, config?, requires_approval?}. configure_tool: {tool_id, config?, replace?, enabled?, requires_approval?}. " +
   "remove_tool: {tool_id, confirm}. set_skills: {agent, activate?: [...], deactivate?: [...]}. " +
   "connect: {agent, connectors: [slug]} → rattache ceux déjà connectés, affiche une carte « Connecter » pour les autres. " +
@@ -538,7 +538,7 @@ export async function createAgentFull(a: OpsActor, p: Record<string, unknown>): 
     chat_enabled: true, mission_enabled: true,
     created_by: a.userId,
     // Les défauts du service (Réglages → Agents), comme la création à la main.
-    model: defaults.model, sandbox_mode: defaults.sandbox_mode, max_steps: defaults.max_steps,
+    model: defaults.model, max_steps: defaults.max_steps,
     max_run_cost_usd: defaults.max_run_cost_usd, swarm_enabled: defaults.swarm_enabled,
   }).select(AGENT_LITE).single();
   if (error || !created) return { notes: [`ERREUR : création impossible (${error?.message ?? "inconnue"}).`], ui: [], missing: [] };
@@ -654,7 +654,7 @@ export async function runAgentOps(
       const dash = ag.service_dashboard_id ?? a.dashboardId;
       const [{ data: prof }, { data: toolRows }, { data: skillRows }, { data: mcpRows }, conns, { data: cols }, { data: repos }, { data: suites }, { data: servers }] = await Promise.all([
         db.from("internal_agents")
-          .select("name, description, role, persona, instructions, soul, preferences, model, temperature, max_steps, sandbox_mode, swarm_enabled, chat_enabled, mission_enabled, is_orchestrator, is_archived, service_dashboard_id")
+          .select("name, description, role, persona, instructions, soul, preferences, model, temperature, max_steps, swarm_enabled, chat_enabled, mission_enabled, is_orchestrator, is_archived, service_dashboard_id")
           .eq("id", ag.id).maybeSingle(),
         db.from("internal_agent_tools").select("id, kind, name, description, config, enabled, requires_approval")
           .eq("agent_id", ag.id).order("created_at", { ascending: true }),
@@ -679,7 +679,7 @@ export async function runAgentOps(
           preferences: str(pr.preferences).slice(0, 800) || null,
         },
         runtime: {
-          model: pr.model, temperature: pr.temperature, max_steps: pr.max_steps, sandbox_mode: pr.sandbox_mode,
+          model: pr.model, temperature: pr.temperature, max_steps: pr.max_steps,
           swarm_enabled: pr.swarm_enabled, chat_enabled: pr.chat_enabled, mission_enabled: pr.mission_enabled,
         },
         tools: ((toolRows ?? []) as OpsToolRow[]).map(describeAgentTool),
@@ -790,7 +790,6 @@ export async function runAgentOps(
       if (typeof p.temperature === "number") patch.temperature = Math.min(Math.max(p.temperature, 0), 1);
       // Contrainte en base : 1 à 30.
       if (typeof p.max_steps === "number") patch.max_steps = Math.min(Math.max(Math.round(p.max_steps), 1), 30);
-      if (["cloud", "runner", "sandbox", "hybrid"].includes(str(p.sandbox_mode))) patch.sandbox_mode = str(p.sandbox_mode);
       for (const k of ["swarm_enabled", "chat_enabled", "mission_enabled"]) {
         const b = bool(p[k]);
         if (b !== undefined) patch[k] = b;
@@ -2126,7 +2125,7 @@ export const ASSISTANT_OPS_DOCTRINE = [
   "AGENTS (manage_agents)",
   "- Lis avant d'écrire : list ou get. Ne devine jamais un tool_id, une skill ou un serveur MCP.",
   "- Créer : create avec un nom clair, un rôle en une ligne et des instructions opérationnelles (ce qu'il fait, avec quoi, comment il rend compte), et DANS LE MÊME APPEL ce qu'on t'a demandé de lui donner : connectors (slugs), skills (trouvées avec search_skills), tools, mcp_servers.",
-  "- Configurer un agent, c'est son prompt système, ses connecteurs, ses skills et ses outils. Modèle, autonomie, sandbox : seulement si on te le demande explicitement.",
+  "- Configurer un agent, c'est son prompt système, ses connecteurs, ses skills et ses outils. Modèle et autonomie : seulement si on te le demande explicitement. Là où il exécute, c'est la machine de son équipe (onglet Machines).",
   "- Un service pas encore connecté : connect affiche une carte « Connecter » dans la conversation, et l'agent le reçoit automatiquement une fois connecté. Ne renvoie jamais vers l'écran Intégrations.",
   "- Retirer un outil ou archiver un agent : demande d'abord l'accord, puis rappelle avec confirm=true.",
   "",

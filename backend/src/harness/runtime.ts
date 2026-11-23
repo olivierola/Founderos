@@ -12,7 +12,10 @@ import { toolCallScope, type Kit } from "./toolkit/plugin.ts";
 import { startBridge, type Bridge } from "./bridge.ts";
 import { guardToolCall, guardToolResult, loadAgentGuardrails } from "./guard.ts";
 import { evalStubFor } from "../edge/_shared/eval-stubs.ts";
+import { afterTool, beforeTool, researchFor } from "./research.ts";
 import { createLifecycle } from "./lifecycle.ts";
+import { createController } from "./controller.ts";
+import { modelForRoute } from "./agent-profile.ts";
 import { ephemeralPlugin } from "./ephemeral.ts";
 import type { AgentSupport } from "./chat.ts";
 import type { Harness, HarnessInstances } from "./host.ts";
@@ -121,13 +124,18 @@ export async function loadKit(agentId: string): Promise<Kit> {
         // Une éval remplace certains outils par des réponses écrites d'avance (npm run eval).
         const stubbed = evalStubFor(agentId, name, args);
         if (stubbed != null) return stubbed;
+        // La mémoire des recherches du run : doublon refusé, sujet récent servi depuis la mémoire.
+        const research = run ? researchFor(run, t.ctx.admin as never) : null;
+        const short = research ? await beforeTool(research, name, args).catch(() => null) : null;
+        if (short != null) return short;
         // Les garde-fous avant l'appel (il ne part pas) et sur son résultat.
         const rows = await guardrails().catch(() => []);
         const runId = run?.runId ?? null;
         const refused = rows.length ? await guardToolCall(t.ctx.admin as never, t.agent, runId, rows, name, args) : null;
         if (refused) return refused;
         const out = String(await set.executor(name, args, { signal }));
-        return rows.length ? guardToolResult(t.ctx.admin as never, t.agent, runId, rows, name, out) : out;
+        const checked = rows.length ? await guardToolResult(t.ctx.admin as never, t.agent, runId, rows, name, out) : out;
+        return research ? afterTool(research, name, args, checked).catch(() => checked) : checked;
       },
     },
   };
@@ -157,12 +165,29 @@ export function usageToLlm(row: UsageRow): Promise<void> {
 /** Branche le magasin et le pont sur un hôte démarré. */
 export function startRuntime(harness: Harness, admin: SupabaseClient, serviceKey: string, agents?: AgentSupport): HarnessRuntime {
   const store = supabaseStore(admin, usageToLlm);
+  // Le contrôleur de boucle après chaque étape (controller.ts).
+  const controller = createController({
+    steer: async (sessionID, text) => { await harness.opencode.sessions.prompt({ sessionID, text, delivery: "steer" }); },
+    interrupt: async (sessionID) => { await harness.opencode.session.interrupt({ sessionID }); },
+    // Le palier lourd de l'agent pour la suite de la session.
+    escalate: async (run) => {
+      const profile = agents?.state.controls.get(run.agentId)?.profile();
+      if (!profile) return null;
+      const heavy = modelForRoute(profile, "heavy");
+      if (agents!.state.turnModels.get(run.sessionId) === heavy) return null;
+      agents!.state.turnModels.set(run.sessionId, heavy);
+      return heavy;
+    },
+  });
   // La fin des runs (contrat, livrables, salle, mission, workflow…) : lifecycle.ts.
   const lifecycle = createLifecycle({
     prompt: async (sessionID, text) => { await harness.opencode.sessions.prompt({ sessionID, text }); },
+    abortReason: controller.abortReason,
+    forget: controller.forget,
   });
   const bridge = startBridge(harness.opencode, store, {
     settle: lifecycle.settle, question: lifecycle.question, overBudget: lifecycle.overBudget,
+    afterStep: controller.afterStep,
   });
   current = {
     harness, store, bridge, serviceKey, agents,

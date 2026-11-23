@@ -147,7 +147,10 @@ describe("harnais OpenCode sur la plateforme locale (HTTP ↔ OpenCode ↔ Postg
     assert.match(system, /Tu es Ops/);
     assert.match(system, /<run_context mode=\\"chat\\">/);
     assert.doesNotMatch(system, /coding agent harness/);
-    assert.ok(llm.annex.every((a) => a.model === "e2e-light"), "les titres sur le palier léger");
+    // Le plan préalable passe par le palier lourd ; les titres, par le léger.
+    const isPlan = (r: Record<string, unknown>) => JSON.stringify(r.messages ?? "").includes("execution plan");
+    assert.ok(llm.annex.some((r) => isPlan(r) && r.model === "e2e-heavy"), "le plan préalable sur le palier lourd");
+    assert.ok(llm.annex.filter((r) => !isPlan(r)).every((r) => r.model === "e2e-light"), "les titres sur le palier léger");
     assert.equal(run?.live_output, null);
     assert.ok(Number(run?.tokens_in) > 0);
 

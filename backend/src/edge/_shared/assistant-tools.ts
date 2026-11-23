@@ -1670,7 +1670,7 @@ const getAgentSetup: AssistantTool = {
     const [profileRes, skillsRes] = await Promise.all([
       ctx.admin
         .from("internal_agents")
-        .select("name, description, role, persona, instructions, model, temperature, max_steps, sandbox_mode, swarm_enabled, chat_enabled, mission_enabled, service_dashboard_id")
+        .select("name, description, role, persona, instructions, model, temperature, max_steps, swarm_enabled, chat_enabled, mission_enabled, service_dashboard_id")
         .eq("id", agent.id)
         .maybeSingle(),
       ctx.admin
@@ -1730,7 +1730,7 @@ const getAgentSetup: AssistantTool = {
       },
       runtime: {
         model: p.model, temperature: p.temperature, max_steps: p.max_steps,
-        sandbox_mode: p.sandbox_mode, swarm_enabled: p.swarm_enabled,
+        swarm_enabled: p.swarm_enabled,
         chat_enabled: p.chat_enabled, mission_enabled: p.mission_enabled,
       },
       skills: {
@@ -1874,7 +1874,6 @@ const addAgentTool: AssistantTool = {
 // Fields the assistant may write on the agent itself, with their guardrails.
 // Anything not listed here (ownership, archive, hosted model, costs) stays out
 // of reach — a conversation shouldn't be able to re-plumb an agent's billing.
-const SANDBOX_MODES = ["cloud", "runner", "sandbox", "hybrid"];
 
 // The assistant cannot connect a service itself — credentials and OAuth belong
 // to the user's browser. What it CAN do is put the real connector cards in the
@@ -1957,7 +1956,7 @@ const updateAgentProfile: AssistantTool = {
   def: {
     name: "update_agent_profile",
     description:
-      "Update an internal agent's identity (name/description/role/persona), its SYSTEM PROMPT (instructions) or its runtime settings (model, temperature, max_steps, sandbox_mode, swarm). Only pass the fields you are changing. For instructions, write the FULL new text — it replaces the previous one, so read it first with get_agent_setup and show the user what you propose before writing.",
+      "Update an internal agent's identity (name/description/role/persona), its SYSTEM PROMPT (instructions) or its runtime settings (model, temperature, max_steps, swarm). Only pass the fields you are changing. For instructions, write the FULL new text — it replaces the previous one, so read it first with get_agent_setup and show the user what you propose before writing.",
     parameters: {
       type: "object",
       properties: {
@@ -1970,7 +1969,6 @@ const updateAgentProfile: AssistantTool = {
         model: { type: "string", description: "Inference model key (e.g. 'deepseek', 'groq')." },
         temperature: { type: "number", description: "0–1. Low = factual, high = creative." },
         max_steps: { type: "number", description: "Tool-loop steps per run (1–30)." },
-        sandbox_mode: { type: "string", enum: SANDBOX_MODES, description: "Where the agent executes." },
         swarm_enabled: { type: "boolean", description: "May fan out to parallel sub-agents." },
       },
       required: ["agent_id"],
@@ -1993,7 +1991,6 @@ const updateAgentProfile: AssistantTool = {
     if (typeof args.max_steps === "number") {
       update.max_steps = Math.min(Math.max(Math.round(args.max_steps), 1), 30); // DB check: 1..30
     }
-    if (SANDBOX_MODES.includes(str(args.sandbox_mode))) update.sandbox_mode = str(args.sandbox_mode);
     if (typeof args.swarm_enabled === "boolean") update.swarm_enabled = args.swarm_enabled;
     if (Object.keys(update).length === 0) return "ERROR: nothing to update — pass at least one field.";
 

@@ -45,8 +45,6 @@ export interface AgentRow {
   project_id: string;
   is_archived: boolean;
   collaboration_enabled: boolean;
-  sandbox_mode: "cloud" | "runner" | "sandbox" | "hybrid";
-  sandbox_url: string | null;
   /** "Essaim" — whether the agent may fan out to parallel sub-agents, and how
    *  many at once. Enabled by default; the agent still decides per task. */
   swarm_enabled?: boolean;
@@ -212,7 +210,7 @@ export async function loadAgentAndTools(agentId: string) {
   const [{ data: agent, error: agentErr }, { data: tools }] = await Promise.all([
     admin
       .from("internal_agents")
-      .select("id, name, persona, instructions, soul, preferences, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, sandbox_mode, sandbox_url, swarm_enabled, swarm_max_concurrency, hosted_endpoint_url, hosted_model, hosted_provider_id, model_routes, created_by, service_dashboard_id, is_orchestrator, autonomy_level")
+      .select("id, name, persona, instructions, soul, preferences, model, temperature, max_steps, max_run_cost_usd, workspace_id, project_id, is_archived, collaboration_enabled, swarm_enabled, swarm_max_concurrency, hosted_endpoint_url, hosted_model, hosted_provider_id, model_routes, created_by, service_dashboard_id, is_orchestrator, autonomy_level")
       .eq("id", agentId)
       .maybeSingle(),
     admin
@@ -243,9 +241,8 @@ export async function prepareAgentToolset(agentId: string, opts: {
 }) {
   const admin = createServiceClient();
   const { agent, tools } = await loadAgentAndTools(agentId);
-  const [agentEndpoint, runtimeConfig, skills, mcpServers, customConnectors, poolScope, dashboards, machine, composioApps] = await Promise.all([
+  const [agentEndpoint, skills, mcpServers, customConnectors, poolScope, dashboards, machine, composioApps] = await Promise.all([
     resolveAgentEndpoint(admin, agent).catch(() => undefined),
-    loadRuntimeConfig(admin),
     loadActivatedSkills(admin, agent.id),
     loadRunMcpServers(admin, agent.id, opts.runId).catch(() => []),
     loadCustomConnectorSnapshots(admin, {
@@ -257,7 +254,7 @@ export async function prepareAgentToolset(agentId: string, opts: {
     loadComposioApps(admin, agent).catch(() => []),
   ]);
   const ctx = makeToolContext({
-    admin, agent, runId: opts.runId, missionId: null, conversationId: opts.conversationId ?? null, delegationDepth: 0, runtimeConfig,
+    admin, agent, runId: opts.runId, missionId: null, conversationId: opts.conversationId ?? null, delegationDepth: 0,
   });
   ctx.skills = skills;
   ctx.mcpServers = mcpServers;
@@ -322,117 +319,6 @@ export function nextRunAt(schedule: string, from: Date): string {
 }
 
 // ---------------------------------------------------------------------------
-// Tool context wiring
-// ---------------------------------------------------------------------------
-
-// Runtime infra config read FRESH from the DB on every run. Edge workers cache
-// env secrets until they're recycled (the pg_cron drainer keeps them warm), so a
-// re-synced SANDBOX_URL secret could stay stale for hours — the root cause of
-// the 03/07 "Sandbox unreachable" fork-bomb incident. app_config is always live.
-export async function loadRuntimeConfig(
-  admin: ReturnType<typeof createServiceClient>,
-): Promise<{ sandboxUrl: string | null; runnerUrl: string | null }> {
-  try {
-    const { data } = await admin.from("app_config").select("key, value").in("key", ["sandbox_url", "runner_browser_url"]);
-    const map = new Map((data ?? []).map((r: { key: string; value: string }) => [r.key, r.value]));
-    return {
-      sandboxUrl: map.get("sandbox_url") || null,
-      runnerUrl: map.get("runner_browser_url") || null,
-    };
-  } catch {
-    return { sandboxUrl: null, runnerUrl: null };
-  }
-}
-
-// Circuit breaker: one cheap probe of the sandbox API before starting real
-// work. Returns null when healthy, else a short diagnostic. Prevents the
-// "grind for hours against a dead tunnel" failure mode.
-export async function probeSandbox(url: string): Promise<string | null> {
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 6000);
-    const res = await fetch(`${url.replace(/\/$/, "")}/v1/bash/exec`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "ngrok-skip-browser-warning": "true",
-        // Meme secret que les outils (FOS-06) : sans lui la sonde recevrait 401
-        // et marquerait a tort le bac a sable comme mort.
-        ...(Deno.env.get("SANDBOX_TOKEN") ? { "X-Sandbox-Token": Deno.env.get("SANDBOX_TOKEN")! } : {}),
-      },
-      body: JSON.stringify({ command: "echo ok", timeout: 5 }),
-      signal: ctrl.signal,
-    });
-    clearTimeout(t);
-    const text = await res.text();
-    if (!res.ok) return `HTTP ${res.status}`;
-    if (!text.trim().startsWith("{")) return "réponse HTML — tunnel mort ou intersticiel";
-    return null;
-  } catch (e) {
-    return (e instanceof Error ? e.message : String(e)).slice(0, 120);
-  }
-}
-
-export const SANDBOX_DOWN_MSG =
-  "⚠縏 Sandbox d'exécution injoignable — l'infrastructure locale (Docker/ngrok/runner) est arrêtée ou le tunnel a changé. " +
-  "Relance-la en une commande : powershell -ExecutionPolicy Bypass -File scripts\\start-agents-infra.ps1 — puis relance la mission.";
-
-// Circuit breaker for RUNNER mode: same idea as probeSandbox, but the runner
-// exposes a plain /health endpoint (browser.js). Returns null when healthy.
-export async function probeRunner(url: string): Promise<string | null> {
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 6000);
-    const res = await fetch(`${url.replace(/\/$/, "")}/health`, {
-      method: "GET",
-      // The runner authenticates EVERY route (incl. /health) with X-Runner-Token;
-      // without it the probe gets 401 and wrongly marks the runner down.
-      headers: { "ngrok-skip-browser-warning": "true", "X-Runner-Token": Deno.env.get("PLATFORM_RUNNER_TOKEN") || "" },
-      signal: ctrl.signal,
-    });
-    clearTimeout(t);
-    const text = await res.text();
-    if (!res.ok) return `HTTP ${res.status}`;
-    if (!text.trim().startsWith("{")) return "réponse HTML — tunnel mort ou intersticiel";
-    return null;
-  } catch (e) {
-    return (e instanceof Error ? e.message : String(e)).slice(0, 120);
-  }
-}
-
-export const RUNNER_DOWN_MSG =
-  "⚠縏 Runner injoignable — la machine self-hosted (runner + tunnel) est arrêtée ou son URL a changé. " +
-  "Relance-la : powershell -ExecutionPolicy Bypass -File scripts\\start-agents-infra.ps1 — puis relance la mission.";
-
-// HYBRID health gate: probe both execution worlds configured on the context and
-// DISABLE (in place) whichever is unreachable, so buildInternalToolset only
-// exposes healthy worlds this turn. Never throws — a hybrid run degrades to the
-// healthy world; the caller decides what to do if BOTH are down. Returns the
-// health map and a short human note.
-export async function gateHybridHealth(
-  ctx: InternalToolContext,
-): Promise<{ runnerUp: boolean; sandboxUp: boolean; note: string }> {
-  const notes: string[] = [];
-  const runnerConfigured = !!(ctx.runnerEnabled && ctx.runnerUrl);
-  const sandboxConfigured = !!ctx.sandboxUrl;
-  const [runnerProbe, sandboxProbe] = await Promise.all([
-    runnerConfigured ? probeRunner(ctx.runnerUrl as string) : Promise.resolve<string | null>(null),
-    sandboxConfigured ? probeSandbox(ctx.sandboxUrl as string) : Promise.resolve<string | null>(null),
-  ]);
-  let runnerUp = runnerConfigured;
-  let sandboxUp = sandboxConfigured;
-  if (runnerConfigured && runnerProbe) {
-    ctx.runnerEnabled = false; ctx.runnerUrl = null; runnerUp = false;
-    notes.push(`runner hors-ligne (${runnerProbe})`);
-  }
-  if (sandboxConfigured && sandboxProbe) {
-    ctx.sandboxUrl = null; sandboxUp = false;
-    notes.push(`sandbox hors-ligne (${sandboxProbe})`);
-  }
-  return { runnerUp, sandboxUp, note: notes.join(" · ") };
-}
-
-// ---------------------------------------------------------------------------
 // Compagnon navigateur (0271)
 // ---------------------------------------------------------------------------
 // Une conversation ouverte depuis le panneau latéral du navigateur porte sur la
@@ -494,8 +380,6 @@ export function makeToolContext(opts: {
   missionId: string | null;
   conversationId?: string | null;
   delegationDepth?: number;
-  /** DB-backed infra config (loadRuntimeConfig) — takes precedence over env. */
-  runtimeConfig?: { sandboxUrl: string | null; runnerUrl: string | null };
 }): InternalToolContext {
   const { admin, agent, runId, missionId } = opts;
   let lastCancelCheck = 0;
@@ -522,15 +406,6 @@ export function makeToolContext(opts: {
     autonomy: normalizeAutonomy(agent.autonomy_level),
     runId,
     conversationId: opts.conversationId ?? null,
-    // Precedence: per-agent override → live DB config → env fallback.
-    // HYBRID exposes BOTH worlds at once (namespaced runner_* / sandbox_*); the
-    // per-tick health gate strips whichever world is currently unreachable.
-    sandboxUrl: (agent.sandbox_mode === "sandbox" || agent.sandbox_mode === "hybrid")
-      ? (agent.sandbox_url || opts.runtimeConfig?.sandboxUrl || Deno.env.get("SANDBOX_URL") || null)
-      : null,
-    runnerEnabled: agent.sandbox_mode === "runner" || agent.sandbox_mode === "hybrid",
-    runnerUrl: opts.runtimeConfig?.runnerUrl || null,
-    hybrid: agent.sandbox_mode === "hybrid",
     missionMode: opts.missionId != null,
     delegationDepth: opts.delegationDepth ?? 0,
     // Essaim: default ON (preserves the always-available behaviour); the tool

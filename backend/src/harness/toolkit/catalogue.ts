@@ -68,8 +68,6 @@ interface FacadeSpec {
   actions: Record<string, ActionRoute>;
 }
 
-/** Un monde d'exécution distant : le préfixe des anciens outils en mode hybride. */
-const WORLDS = ["runner", "sandbox", "team"] as const;
 
 /**
  * Les outils regroupés. Chaque action renvoie à un outil de l'ancien moteur ;
@@ -90,10 +88,8 @@ const FACADES: FacadeSpec[] = [
   },
   {
     name: "browser", lot: "web", key: "action",
-    summary: "Piloter un navigateur : celui du runner, de la sandbox, ou celui de l'utilisateur.",
+    summary: "Piloter le navigateur de la personne (son extension), avec son accord. Le navigateur de la machine d'équipe est dans l'outil machine.",
     actions: {
-      runner: { legacy: ["browse_web"] },
-      sandbox: { legacy: ["sandbox_browser"] },
       user: { legacy: ["user_browser"] },
     },
   },
@@ -133,45 +129,13 @@ const FACADES: FacadeSpec[] = [
     },
   },
   {
-    name: "run_code", lot: "execution", key: "language",
-    summary: "Exécuter du code ou une commande sur une machine distante (runner, sandbox ou machine d'équipe).",
-    actions: {
-      shell: { legacy: ["shell_exec", "team_shell"] },
-      python: { legacy: ["python_exec"] },
-      node: { legacy: ["nodejs_exec"] },
-      jupyter: { legacy: ["jupyter_exec"] },
-    },
-  },
-  {
-    name: "remote_files", lot: "execution", key: "action",
-    summary: "Les fichiers d'une machine distante.",
-    actions: {
-      read: { legacy: ["file_read"] },
-      write: { legacy: ["file_write"] },
-      edit: { legacy: ["file_edit"] },
-      list: { legacy: ["list_files"] },
-      search: { legacy: ["file_search"] },
-      manage: { legacy: ["manage_files", "team_files"] },
-      folders: { legacy: ["team_folders"] },
-    },
-  },
-  {
-    name: "process", lot: "execution", key: "action",
-    summary: "Les processus longs d'une machine distante.",
-    actions: {
-      start: { legacy: ["run_background"] },
-      list: { legacy: ["list_processes"] },
-      logs: { legacy: ["process_logs"] },
-      stop: { legacy: ["process_stop"] },
-      jobs: { legacy: ["team_jobs"] },
-    },
-  },
-  {
     name: "machine", lot: "execution", key: "action",
-    summary: "La machine distante elle-même : état, environnement, installation de paquets, navigateur d'équipe.",
+    summary: "Ta machine d'équipe, le seul endroit où tu exécutes : commandes, fichiers, dossiers protégés, processus de fond, paquets, navigateur.",
     actions: {
-      info: { legacy: ["machine_info"] },
-      env: { legacy: ["sandbox_env"] },
+      shell: { legacy: ["team_shell"] },
+      files: { legacy: ["team_files"] },
+      folders: { legacy: ["team_folders"] },
+      jobs: { legacy: ["team_jobs"] },
       install: { legacy: ["team_install"] },
       browser: { legacy: ["team_browser"] },
     },
@@ -375,25 +339,10 @@ const firstSentence = (s: string, max = 160) => {
   return out.length > max ? `${out.slice(0, max - 1)}…` : out;
 };
 
-/** Le nom effectif d'un ancien outil : tel quel, ou préfixé par son monde (mode hybride). */
-function resolveLegacy(names: string[], have: Map<string, LegacyDef>, world?: string): string | null {
-  if (world) {
-    for (const n of names) {
-      if (have.has(`${world}_${n}`)) return `${world}_${n}`;
-      if (n.startsWith(`${world}_`) && have.has(n)) return n;
-    }
-  }
-  for (const n of names) {
-    if (have.has(n)) return n;
-    for (const w of WORLDS) if (have.has(`${w}_${n}`)) return `${w}_${n}`;
-  }
-  return null;
+/** Le premier ancien outil de la liste que l'agent a. */
+function resolveLegacy(names: string[], have: Map<string, LegacyDef>): string | null {
+  return names.find((n) => have.has(n)) ?? null;
 }
-
-/** L'agent a-t-il plusieurs machines pour ces outils (runner_, sandbox_, team_) ? */
-const worldsOf = (names: string[], have: Map<string, LegacyDef>) => new Set(
-  names.flatMap((n) => WORLDS.filter((w) => have.has(`${w}_${n}`) || (n.startsWith(`${w}_`) && have.has(n)))),
-);
 
 /**
  * Un outil regroupé : `key` choisit l'action, les autres propriétés sont l'union
@@ -408,7 +357,6 @@ function buildFacade(spec: FacadeSpec, legacy: LegacyToolset, have: Map<string, 
   const props: JsonObject = {};
   const usedBy = new Map<string, string[]>();
   const required = new Map<string, string[]>();
-  const hasWorlds = worldsOf(live.flatMap((a) => a.route.legacy), have).size > 1;
   for (const { action, def } of live) {
     const p = (def.parameters as JsonObject)?.properties ?? {};
     for (const [k, v] of Object.entries(p)) {
@@ -432,7 +380,6 @@ function buildFacade(spec: FacadeSpec, legacy: LegacyToolset, have: Map<string, 
     type: "object",
     properties: {
       [spec.key]: { type: "string", enum: live.map((a) => a.action), description: `Ce que tu fais.` },
-      ...(hasWorlds ? { world: { type: "string", enum: [...WORLDS], description: "La machine (si l'agent en a plusieurs)." } } : {}),
       ...props,
     },
     required: [spec.key],
@@ -448,11 +395,10 @@ function buildFacade(spec: FacadeSpec, legacy: LegacyToolset, have: Map<string, 
       const action = String(args[spec.key] ?? "");
       const entry = live.find((a) => a.action === action);
       if (!entry) return `ERROR: ${spec.key} « ${action} » inconnu. Valeurs : ${live.map((a) => a.action).join(", ")}.`;
-      const world = typeof args.world === "string" ? args.world : undefined;
-      const target = resolveLegacy(entry.route.legacy, have, world)!;
+      const target = resolveLegacy(entry.route.legacy, have)!;
       const rest: JsonObject = {};
       for (const [k, v] of Object.entries(args)) {
-        if (k === spec.key || k === "world") continue;
+        if (k === spec.key) continue;
         rest[k === "operation" ? "action" : k] = v;
       }
       const missing = (required.get(action) ?? []).filter((k) => rest[k === "operation" ? "action" : k] == null);

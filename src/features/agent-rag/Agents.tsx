@@ -54,7 +54,6 @@ interface InternalAgent {
   avatar_style: "avatar" | "orb" | null;
   avatar_url: string | null;
   model: string | null;
-  sandbox_mode: string | null;
   studio: string | null;
   is_orchestrator: boolean | null;
   service_dashboard_id: string | null;
@@ -88,7 +87,7 @@ export function AgentsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("internal_agents")
-        .select("id, name, description, avatar_style, avatar_url, model, sandbox_mode, studio, is_orchestrator, service_dashboard_id, created_at")
+        .select("id, name, description, avatar_style, avatar_url, model, studio, is_orchestrator, service_dashboard_id, created_at")
         .eq("project_id", projectId!)
         .eq("is_archived", false)
         .order("created_at", { ascending: false });

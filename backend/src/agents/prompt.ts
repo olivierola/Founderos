@@ -7,7 +7,7 @@ import { Deno } from "../compat/index.ts";
 import { createServiceClient } from "../edge/_shared/supabase-admin.ts";
 import { callAi } from "../edge/_shared/ai.ts";
 import { normalizeAutonomy, type AutonomyLevel } from "../edge/_shared/policyguard.ts";
-import { classifyTier, modelForTier, availableProviders, type Provider } from "../edge/_shared/model-router.ts";
+import { classifyTier, defaultProvider, modelForTier, availableProviders, type Provider } from "../edge/_shared/model-router.ts";
 import { NO_LONG_DASH_RULE, RICH_REPLY_DOCTRINE } from "../edge/_shared/reply-format.ts";
 import { embedTexts, embeddingsAvailable, toVectorLiteral } from "../edge/_shared/jina.ts";
 import { judge, choice, readChoice, ranked, qid, type JudgeContext } from "../edge/_shared/typesafe.ts";
@@ -408,15 +408,16 @@ export function safeParsePlan(content: string): ExecutionPlan | null {
 }
 
 export async function produceExecutionPlan(opts: {
-  provider: "groq" | "deepseek";
+  /** Le fournisseur de l'appel ; par défaut celui de la plateforme. */
+  provider?: Provider;
   agent: AgentRow;
+  /** Les outils de l'agent sur le harnais (le toolkit : outils regroupés et noyau). */
   toolDefs: Array<{ name: string; description: string }>;
   taskText: string;
   contextText?: string;
-  /** Hybrid agent → the planner must choose a world (runner/sandbox) per step. */
-  hybrid?: boolean;
 }): Promise<{ plan: ExecutionPlan; markdown: string } | null> {
-  const { provider, agent, toolDefs, taskText, contextText, hybrid } = opts;
+  const { agent, toolDefs, taskText, contextText } = opts;
+  const provider = opts.provider ?? defaultProvider();
   // Rich tool catalog: name + what it does & when it's useful. The planner reads
   // this to choose the right tool per step and to explain each tool to the user.
   const descByName = new Map(toolDefs.map((d) => [d.name, d.description]));
@@ -427,13 +428,6 @@ export async function produceExecutionPlan(opts: {
     ``,
     `You may ONLY use these tools — refer to them by their EXACT name. Each line is "name: what it does":`,
     toolCatalog || "(no external tools available — plan using your own reasoning and knowledge)",
-    ...(hybrid ? [
-      ``,
-      `EXECUTION ENVIRONMENT — HYBRID: you are the ORCHESTRATOR of TWO execution worlds and must assign ONE world to each step that runs code/shell/files/browser:`,
-      `  • RUNNER (runner_* tools, e.g. runner_shell_exec, runner_python_exec, runner_file_write, runner_run_background, runner_browse_web) — the operator's REAL machine with a PERSISTENT workspace, a real Playwright browser and long-running processes. Choose it for: work on the real project/repo, dev servers & watchers, anything that must persist, and real-browser automation.`,
-      `  • SANDBOX (sandbox_* tools, e.g. sandbox_shell_exec, sandbox_python_exec, sandbox_jupyter_exec, sandbox_browser) — a DISPOSABLE, isolated Linux container with a stateful Jupyter kernel and Chromium. Choose it for: risky/untrusted code, throwaway data crunching, and isolation from the real machine.`,
-      `  RULES: name the EXACT namespaced tools per step (runner_* OR sandbox_*), and PREFIX each such task's title with [runner] or [sandbox] so the chosen world is explicit. Keep a whole pipeline (write→run→read→save) in ONE world — files do NOT transfer between worlds. If only one world's tools appear in the list above, that world is the only one available right now: plan every execution step on it.`,
-    ] : []),
     ``,
     `Respond with STRICT JSON only (no prose, no code fence), matching exactly:`,
     `{`,
@@ -445,10 +439,10 @@ export async function produceExecutionPlan(opts: {
     `  "risks": "main risks, ambiguities or assumptions (optional)",`,
     `  "done_when": "objective definition of done"`,
     `}`,
-    `Keep it tight: 3-8 tasks. Only include tools that genuinely apply to a task (a task may need zero tools). Do not invent tool names. If the request is too ambiguous to plan responsibly, make your first task use the ask_user tool.`,
-    ...(descByName.has("spawn_parallel_agents") ? [
-      `REUSE FIRST: if this request (or parts of it) may already have been done, make the FIRST task check with search_context(scope="past_runs") and reuse existing deliverables — do NOT re-run work that already exists.`,
-      `PARALLELISM BY DEFAULT: actively look for parallelism when decomposing. Whenever 2+ steps are genuinely NEW and INDEPENDENT (none needs another's output) and not already done, plan them as ONE fan-out task with spawn_parallel_agents instead of separate sequential tasks. ESPECIALLY when a step is "do X for EACH of N items" (source each of N products, analyse each of N competitors/URLs) — make it a SINGLE fan-out with one subtask per item (no small cap — dozens is fine), never N sequential tasks. Keep steps sequential ONLY when they truly depend on each other's output (chain them), or the work is already produced.`,
+    `Keep it tight: 3-8 tasks. Only include tools that genuinely apply to a task (a task may need zero tools). Do not invent tool names. If the request is too ambiguous to plan responsibly, make your first task use the question tool. Code, commands and files run on the team machine (tool machine).`,
+    `REUSE FIRST: if this request (or parts of it) may already have been done, make the FIRST task look for it with grep (types past_work, artifacts) and reuse existing deliverables — do NOT re-run work that already exists.`,
+    ...(descByName.has("subagent") ? [
+      `PARALLELISM BY DEFAULT: actively look for parallelism when decomposing. Whenever 2+ steps are genuinely NEW and INDEPENDENT (none needs another's output) and not already done, plan them as ONE fan-out task handed to specialists with the subagent tool instead of separate sequential tasks. ESPECIALLY when a step is "do X for EACH of N items" (source each of N products, analyse each of N competitors/URLs) — make it a SINGLE fan-out with one subtask per item (no small cap — dozens is fine), never N sequential tasks. Keep steps sequential ONLY when they truly depend on each other's output (chain them), or the work is already produced.`,
     ] : []),
     `RESUME-AWARE: if the context below shows work already done (files created, steps completed) — e.g. the user said "continue" — plan ONLY the REMAINING steps. Make the first task verify existing state (list files / re-read prior results) and then proceed from the first unfinished step. Never re-plan finished work from scratch.`,
   ].join("\n");

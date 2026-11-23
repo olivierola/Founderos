@@ -102,9 +102,9 @@ export interface AgentTemplate {
    *  them: they cannot be dialled from the cloud runtime, but a role's real
    *  stack is worth naming even where we can only reach part of it. */
   mcpServers?: string[];
-  /** Execution world the agent needs: 'cloud' (default), 'runner', 'sandbox'
-   *  or 'hybrid'. Security/pentest agents need 'sandbox' (real tools). */
-  sandboxMode?: "cloud" | "runner" | "sandbox" | "hybrid";
+  /** L'agent a besoin d'une machine d'équipe pour travailler (outils réels :
+   *  code, scanners, fichiers). Elle se donne dans l'onglet Machines. */
+  needsMachine?: boolean;
   /** Marks a specialized "studio" agent — premium border + structured session
    *  artifacts + the engine tool it owns. */
   studio?: StudioKind;
@@ -1028,7 +1028,7 @@ RÈGLES ABSOLUES
     emoji: "🎯",
     icon3d: "target",
     accent: "#7f1d1d",
-    sandboxMode: "sandbox",
+    needsMachine: true,
     skillSlugs: ["pentest-recon", "pentest-web-app"],
     persona:
       "Un lead red team méthodique qui cartographie avant d'attaquer, ne rapporte que ce qu'il a reproduit, et s'arrête à la preuve sans jamais aller jusqu'au dommage.",
@@ -1079,7 +1079,7 @@ RAPPORT
     emoji: "🔬",
     icon3d: "zoom",
     accent: "#991b1b",
-    sandboxMode: "hybrid",
+    needsMachine: true,
     skillSlugs: ["appsec-code-review", "code-analyst"],
     persona:
       "Un ingénieur AppSec exigeant qui ne signale que ce qu'il peut tracer de la source non fiable jusqu'au sink, cite le fichier et la ligne exacts, et propose un correctif qui compile.",
@@ -1134,7 +1134,7 @@ RÈGLES ABSOLUES
     emoji: "🧠",
     icon3d: "potion",
     accent: "#6d28d9",
-    sandboxMode: "sandbox",
+    needsMachine: true,
     skillSlugs: ["pentest-web-app", "web-researcher"],
     persona:
       "Un red-teamer spécialisé IA qui pense comme un attaquant d'collaborateurs : il détourne le contexte, empoisonne les entrées ingérées, force la fuite du prompt système, et s'arrête à la preuve, sans jamais faire de dégât réel.",

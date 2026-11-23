@@ -128,12 +128,12 @@ Un outil regroupé ne montre que les actions que l'agent possède. Un lot vide n
 
 | Lot | Outils | Anciens outils regroupés |
 |---|---|---|
-| `web` | `web` (search, read, research, download, get, request), `browser` (runner, sandbox, user) | web_search, read_url, deep_research, download_file, http_get, http_request, browse_web, sandbox_browser, user_browser |
+| `web` | `web` (search, read, research, download, get), `browser` (user) | web_search, read_url, deep_research, download_file, http_get, user_browser |
 | `livrables` | `document` (deliver, section, create, update, add_block, publish, read, list, assets, link), `report`, `generate` (pdf, image), `interface` (render, guide, page) | 16 outils |
 | `applications` | `apps` (list, describe, call) | crm, send_email, run_automation, dashboard, list_connectors, et **tous** les outils dynamiques : `mcp_*`, `ext_*`, Composio |
 | `metier` | Un outil par produit de l'agent, tel quel | tracker, vibe_code, lead_sense, support_desk, sentinel, security_scan, pentest_scope, testing, simulation, training, policy_audit |
 | `equipe` | `team` (list, message, delegate, handoff), `mission` (create, list, move, propose, task, workflow, new_agent), `workflow` (list, create, configure, add_block, link, activate) | 17 outils |
-| `execution` | `run_code` (shell, python, node, jupyter), `remote_files`, `process`, `machine`, avec `world` = runner, sandbox ou team quand l'agent a plusieurs machines | 24 outils, dont les variantes `runner_*` / `sandbox_*` / `team_*` |
+| `execution` | `machine` (shell, files, folders, jobs, install, browser) : la machine d'équipe, seul monde d'exécution (plus de sandbox ni de runner depuis le 23/11) | team_shell, team_files, team_folders, team_jobs, team_install, team_browser |
 | `fichiers` | `read`, `write`, `edit`, `glob` (natifs, dossier de l'agent) | file_read, file_write, file_edit, list_files, file_search |
 | `admin` | `admin` (agents, projects, connectors, teams, dashboards). Assistant de service seulement | manage_* |
 
@@ -156,9 +156,9 @@ Au démarrage, `uncovered()` signale tout ancien outil qu'aucun outil ne sert. U
 |---|---|---|---|
 | `chercheur` | web, browser | documents, facts, findings | research, veille, seo, marché… |
 | `redacteur` | document, report, generate | documents, past_work, artifacts | rédaction, rapport, contenu, brand… |
-| `analyste` | run_code, remote_files | table, company, documents | data, analyse, finance, kpi… |
+| `analyste` | machine | table, company, documents | data, analyse, finance, kpi… |
 | `integrateur` | apps | resources | intégration, crm, mail, api… |
-| `operateur` | run_code, remote_files, process, machine | conversation, documents | code, devops, infra, test… |
+| `operateur` | machine | conversation, documents | code, devops, infra, test… |
 
 Un spécialiste n'existe que si l'agent a au moins un de ses outils. Il voit :
 - **son prompt** : ses instructions et la consigne de compte rendu, sans le prompt de l'agent, sa personnalité ni son entreprise ;

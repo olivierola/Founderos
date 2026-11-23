@@ -40,8 +40,6 @@ export interface InternalAgent {
    *  directement à son service. Persisté, donc lisible par la carte
    *  d'entreprise et par les agents eux-mêmes. */
   parent_agent_id: string | null;
-  sandbox_mode: "cloud" | "runner" | "sandbox" | "hybrid";
-  sandbox_url: string | null;
   /** "Essaim" — may the agent fan out to parallel sub-agents, and how many at
    *  once. Enabled by default; the agent still decides per task. */
   swarm_enabled: boolean;

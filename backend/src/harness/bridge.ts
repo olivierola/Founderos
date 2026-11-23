@@ -70,6 +70,7 @@ interface SessionState {
   tokensCached: number;
   toolCalls: number;
   trail: TrailEntry[];
+  steps: number;
   ended: boolean;
 }
 
@@ -97,6 +98,8 @@ export interface BridgeOptions {
   settle?: (run: BoundRun, outcome: RunOutcome) => Promise<"done" | "continue">;
   /** L'agent pose une question : absent, la question reste en attente dans OpenCode. */
   question?: (run: BoundRun, q: RunQuestion) => Promise<void>;
+  /** Après chaque étape du run : le contrôleur de boucle (controller.ts). */
+  afterStep?: (run: BoundRun, info: { trail: TrailEntry[]; steps: number; costUsd: number }) => Promise<void>;
   /** Après chaque étape : vrai pour arrêter le run (plafond de dépense atteint). */
   overBudget?: (run: BoundRun, totals: { costUsd: number; tokensIn: number; tokensOut: number }) => Promise<string | null>;
 }
@@ -163,7 +166,7 @@ export function startBridge(opencode: OpenCodeHost, store: HarnessStore, options
     sessions.set(run.sessionId, {
       run, queue: Promise.resolve(), toolNames: new Map(), toolArgs: new Map(), texts: new Map(), lastAssistant: null,
       live: "", liveTimer: null, liveAt: 0, model: { id: "", provider: "" },
-      cost: 0, tokensIn: 0, tokensOut: 0, tokensCached: 0, toolCalls: 0, trail: [], ended: false,
+      cost: 0, tokensIn: 0, tokensOut: 0, tokensCached: 0, toolCalls: 0, trail: [], steps: 0, ended: false,
     });
   };
 
@@ -350,8 +353,13 @@ export function startBridge(opencode: OpenCodeHost, store: HarnessStore, options
       case "session.step.ended":
         if (s.liveTimer) { clearTimeout(s.liveTimer); s.liveTimer = null; }
         s.live = "";
+        s.steps++;
         usage(s, d, "step");
         enqueue(s, () => store.updateRun(runId, { live_output: null }));
+        if (options.afterStep) {
+          const info = { trail: s.trail, steps: s.steps, costUsd: s.cost };
+          enqueue(s, () => (s.ended ? Promise.resolve() : options.afterStep!(s.run, info)));
+        }
         return;
       case "session.step.failed":
         if (d.tokens) usage(s, d, "step");

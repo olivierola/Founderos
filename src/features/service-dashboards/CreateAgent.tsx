@@ -392,7 +392,6 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
   const [name, setName] = useState("");
   const [avatar, setAvatar] = useState<string | null>(AVATAR_OPTIONS[0]);
   const [avatarOpen, setAvatarOpen] = useState(false);
-  const [runtime, setRuntime] = useState<"cloud" | "runner">(defaults.sandbox_mode === "runner" ? "runner" : "cloud");
   const [provider, setProvider] = useState(PROVIDERS.find((p) => p.models.some((m) => m.id === defaults.model))?.id ?? "deepseek");
   const [model, setModel] = useState(defaults.model);
   /** "<providerId>|<modelId>" when the agent runs on one of the company's own
@@ -472,7 +471,6 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
       const own = provider === OWN_MODELS && ownModel ? ownModel.split("|") : null;
       await supabase.from("internal_agents").update({
         model: own ? defaults.model : model,
-        sandbox_mode: runtime,
         hosted_provider_id: own ? own[0] : null,
         hosted_model: own ? own.slice(1).join("|") : null,
       }).eq("id", agentId);
@@ -542,17 +540,6 @@ function BuildYourOwn({ dashboardId, workspaceId, projectId, base }: {
       {avatarOpen && <div className="mt-4"><AvatarPicker value={avatar} onChange={setAvatar} name={name} onDone={() => setAvatarOpen(false)} /></div>}
 
       <div className="my-6 border-t border-border/60" />
-
-      {/* Runtime */}
-      <div className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 p-1">
-        <RuntimeBtn icon={GlobeIcon} label="Web" active={runtime === "cloud"} onClick={() => setRuntime("cloud")} />
-        <RuntimeBtn icon={LaptopIcon} label="Local" active={runtime === "runner"} onClick={() => setRuntime("runner")} />
-      </div>
-      <p className="mt-1.5 text-xs text-muted-foreground">
-        {runtime === "cloud"
-          ? "Edge serverless : web, base, connecteurs."
-          : "Votre runner : navigateur, shell, fichiers."}
-      </p>
 
       {/* Provider + model — ours, or one of the company's own registered models. */}
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -838,7 +825,7 @@ function TemplateGallery({ dashboardId, workspaceId, projectId, base }: {
               extras={t.skillSlugs?.length ?? 0}
               badges={[
                 { label: t.category, tone: "auth", title: "Catégorie" },
-                { label: t.sandboxMode ?? "cloud", tone: "key", title: "Environnement d'exécution" },
+                ...(t.needsMachine ? [{ label: "machine", tone: "key" as const, title: "A besoin d'une machine d'équipe pour travailler" }] : []),
               ]}
               shield={t.autonomy !== "autopilot"}
               meta={`${t.max_steps} pas`}

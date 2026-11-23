@@ -38,6 +38,7 @@ import { relayFetchFor } from "./mcp-relay.ts";
 import { callIdentity, classifyMcpResult, reportToolCall, traceIdFor } from "./mcp-observe.ts";
 import { judge as judgeTs, noul as noulTs, readNoul as readNoulTs } from "./typesafe.ts";
 import { workflowPoolError } from "./resource-pools.ts";
+import { agentCall, loadAgentMachine } from "./team-machine.ts";
 
 type Admin = SupabaseClient;
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
@@ -404,57 +405,51 @@ async function callAction(
 }
 
 /**
- * Exécuter du code dans le sandbox du projet.
+ * Exécuter du code sur la machine d'équipe du service.
  *
- * Même porte que celle des agents (`POST <sandbox>/v1/code/execute`), et pas
- * une seconde : le sandbox est un service, pas une capacité de l'agent, et un
- * deuxième chemin d'appel divergerait au premier changement de contrat.
- *
- * `stateful: false`, contrairement aux agents. Un agent enchaîne des cellules
- * dans un même raisonnement et veut garder ses variables ; une automatisation
- * doit rendre le même résultat à chaque exécution, et un noyau qui se souvient
- * du run précédent est précisément ce qui l'en empêcherait.
+ * Il n'y a plus de sandbox : le code d'une automatisation tourne sur la machine
+ * qu'a l'assistant du service (le même endroit que le travail de ses agents),
+ * sous son identité, dans un fichier jetable de son dossier perso. Sans état :
+ * une automatisation doit rendre le même résultat à chaque exécution.
  */
 async function runCode(rc: RunCtx, language: string, code: string): Promise<unknown> {
-  const { data } = await rc.admin.from("app_config").select("value").eq("key", "sandbox_url").maybeSingle();
-  const base = str((data as { value?: string } | null)?.value).replace(/\/$/, "");
-  if (!base) throw new Error("Aucun sandbox configuré : impossible d'exécuter du code.");
-
-  const res = await fetch(`${base}/v1/code/execute`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      // Évite la page d'avertissement des tunnels ngrok gratuits, qui renvoie
-      // du HTML là où on attend du JSON.
-      "ngrok-skip-browser-warning": "true",
-      "User-Agent": "Anduran-Automation/1.0",
-    },
-    body: JSON.stringify({ language, code, stateful: false }),
-    signal: AbortSignal.timeout(CODE_TIMEOUT_MS),
-  });
-  const text = await res.text();
-  if (text.trimStart().startsWith("<")) {
-    // Le tunnel ngrok gratuit sert une page HTML le temps de se reconnecter :
-    // c'est passager par nature.
-    throw new TransientError("Sandbox injoignable : une page HTML est revenue au lieu du résultat.");
+  const { data: wf } = await rc.admin.from("agent_workflows").select("service_dashboard_id, project_id").eq("id", rc.workflowId).maybeSingle();
+  const dashboardId = (wf as { service_dashboard_id?: string | null } | null)?.service_dashboard_id ?? null;
+  if (!dashboardId) throw new Error("Cette automatisation n'appartient à aucun service : pas de machine où exécuter du code.");
+  const { data: agents } = await rc.admin.from("internal_agents")
+    .select("id, name, service_dashboard_id, is_orchestrator").eq("service_dashboard_id", dashboardId).eq("is_archived", false)
+    .order("is_orchestrator", { ascending: false }).limit(10);
+  let machine: Awaited<ReturnType<typeof loadAgentMachine>> = null;
+  for (const a of (agents ?? []) as Array<{ id: string; name: string; service_dashboard_id: string }>) {
+    machine = await loadAgentMachine(rc.admin, a).catch(() => null);
+    if (machine) break;
   }
-  let json: Record<string, unknown> = {};
-  try { json = JSON.parse(text); } catch { json = { raw: text }; }
-  if (!res.ok) {
-    const msg = `Sandbox (${res.status}) : ${text.slice(0, 300)}`;
-    throw res.status === 429 || res.status >= 500 ? new TransientError(msg) : new Error(msg);
-  }
+  if (!machine) throw new Error("Aucune machine d'équipe dans ce service : donnez-en une à l'assistant (onglet Machines) pour exécuter du code.");
 
-  const stderr = str(json.stderr).trim();
-  const status = str(json.status).toLowerCase();
+  const ext = language === "python" ? "py" : language === "javascript" ? "js" : "sh";
+  const runner = language === "python" ? "python3" : language === "javascript" ? "node" : "bash";
+  const file = `.automations/${rc.runId}-${rc.position}.${ext}`;
+  // Le code passe en base64 : aucune séquence du script ne peut casser la commande.
+  const b64 = Buffer.from(code, "utf8").toString("base64");
+  const command = `mkdir -p ~/.automations && echo '${b64}' | base64 -d > ~/${file} && ${runner} ~/${file}; s=$?; rm -f ~/${file}; exit $s`;
+  let d: Record<string, unknown>;
+  try {
+    d = await agentCall<Record<string, unknown>>(rc.admin, machine, "exec", { command, timeout: Math.round(CODE_TIMEOUT_MS / 1000) }, CODE_TIMEOUT_MS + 30_000);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // Une machine injoignable l'est souvent pour un moment : on peut réessayer.
+    throw /injoignable|unreachable|ECONNREFUSED|fetch failed|timeout/i.test(msg) ? new TransientError(`Machine : ${msg}`) : new Error(msg);
+  }
+  const stderr = str(d.stderr).trim();
+  const stdout = str(d.stdout).trim();
   // Un script qui échoue doit ARRÊTER la chaîne. Rendre sa trace comme un
   // résultat ordinaire ferait continuer les étapes suivantes sur une valeur
   // qui n'existe pas.
-  if (status === "error" || (stderr && !str(json.stdout).trim())) {
-    throw new Error(stderr.slice(0, 500) || "le code a échoué");
-  }
-  // `result` quand le sandbox sait typer la dernière expression, sinon stdout.
-  return json.result ?? (str(json.stdout).trim() || null);
+  if (d.timed_out) throw new Error("le code a dépassé son temps d'exécution");
+  if (Number(d.exit_code ?? 0) !== 0) throw new Error(stderr.slice(0, 500) || `le code a échoué (code ${String(d.exit_code)})`);
+  // La dernière ligne en JSON, si c'en est, devient une valeur typée pour les étapes suivantes.
+  const last = stdout.split("\n").at(-1) ?? "";
+  try { return JSON.parse(last); } catch { return stdout || null; }
 }
 
 /**

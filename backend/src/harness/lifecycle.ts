@@ -43,6 +43,7 @@ import { MISSION_COLUMNS, type MissionRow } from "../agents/mission.ts";
 import type { BoundRun } from "./store.ts";
 import type { RunOutcome, RunQuestion, TrailEntry } from "./bridge.ts";
 import { legacyNameFor } from "./toolkit/catalogue.ts";
+import { dropResearch, persistFindings } from "./research.ts";
 
 type Admin = SupabaseClient;
 
@@ -50,6 +51,10 @@ type Admin = SupabaseClient;
 export interface LifecycleDeps {
   /** Envoie un message à la session du run (relance après un contrat non tenu…). */
   prompt(sessionId: string, text: string): Promise<void>;
+  /** La raison d'un arrêt décidé par le contrôleur de boucle : le run finit en échec. */
+  abortReason?(runId: string): string | null;
+  /** Le run est clos : le contrôleur oublie son état. */
+  forget?(runId: string): void;
   log?: (message: string) => void;
 }
 
@@ -258,6 +263,8 @@ export function createLifecycle(deps: LifecycleDeps) {
       await reportBindings(admin, meta, true, final);
     }
     remember(run.runId, "succeeded", final);
+    // Ce que le run a trouvé en cherchant devient une mémoire pour la prochaine fois.
+    await persistFindings(run.runId).catch(() => {});
     captureKnowledgeInBackground(admin as never, {
       workspaceId: agent.workspace_id, projectId: agent.project_id, agentId: agent.id, runId: run.runId,
       text: final, context: kind === "mission" ? `Mission : ${mission?.title ?? ""}` : String(meta.task ?? "").slice(0, 1500),
@@ -297,6 +304,7 @@ export function createLifecycle(deps: LifecycleDeps) {
       }).catch(() => {});
     }
     remember(run.runId, "failed", message);
+    dropResearch(run.runId);
   }
 
   async function cancel(admin: Admin, run: BoundRun, agent: AgentRow | null) {
@@ -308,6 +316,7 @@ export function createLifecycle(deps: LifecycleDeps) {
     }
     await reportBindings(admin, meta, false, "Run annulé.");
     remember(run.runId, "cancelled", "Run annulé.");
+    dropResearch(run.runId);
   }
 
   return {
@@ -320,15 +329,19 @@ export function createLifecycle(deps: LifecycleDeps) {
           return "done";
         }
         try {
-          return await succeed(admin, run, agent, outcome);
+          const next = await succeed(admin, run, agent, outcome);
+          if (next === "done") deps.forget?.(run.runId);
+          return next;
         } catch (e) {
           log(`fin du run ${run.runId} : ${e instanceof Error ? e.message : String(e)}`);
           await fail(admin, run, agent, { ...outcome, status: "failed", text: `fin de run impossible : ${e instanceof Error ? e.message : String(e)}` });
           return "done";
         }
       }
-      if (outcome.status === "failed") await fail(admin, run, agent, outcome);
+      const aborted = outcome.status === "cancelled" ? deps.abortReason?.(run.runId) ?? null : null;
+      if (outcome.status === "failed" || aborted) await fail(admin, run, agent, aborted ? { ...outcome, status: "failed", text: aborted } : outcome);
       else await cancel(admin, run, agent);
+      deps.forget?.(run.runId);
       return "done";
     },
 
