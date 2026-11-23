@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   PlusIcon, PackageIcon, KeyIcon, DownloadSimpleIcon, PlayIcon, PauseIcon, StopIcon, ArrowsClockwiseIcon,
-  CpuIcon, GlobeIcon, CopyIcon, TrashIcon, TerminalWindowIcon, DatabaseIcon, FloppyDiskIcon, ArrowSquareOutIcon,
+  CpuIcon, GlobeIcon, CopyIcon, TrashIcon, TerminalWindowIcon, DatabaseIcon, FloppyDiskIcon, ArrowSquareOutIcon, UploadSimpleIcon,
   CircleNotchIcon as Loader2,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
   downloadBase64, embeddedApi, isLive, useEmbeddedAgents, useRefreshEmbedded,
   type EmbeddedAgent, type EmbeddedConfig, type EmbeddedList, type SeedFile,
 } from "./api";
+import { templateShape, type MachineTemplate } from "@/features/machines/api";
 
 /**
  * Les agents embarqués du service (0316) : la troisième sorte d'agent, à côté
@@ -29,12 +30,16 @@ export function EmbeddedAgentsTab({ dashboardId, base }: { dashboardId: string; 
   const { data, isLoading } = useEmbeddedAgents(dashboardId);
   const [params, setParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
-  // « Agent embarqué » depuis le menu des collaborateurs arrive ici avec ?new=1.
+  const [startTemplate, setStartTemplate] = useState<string | null>(null);
+  // « Agent embarqué » depuis le menu des collaborateurs arrive ici avec ?new=1 ;
+  // depuis le catalogue des machines, avec ?template= en plus.
   useEffect(() => {
     if (params.get("new") !== "1") return;
+    setStartTemplate(params.get("template"));
     setCreating(true);
     const next = new URLSearchParams(params);
     next.delete("new");
+    next.delete("template");
     setParams(next, { replace: true });
   }, [params, setParams]);
   const agents = data?.agents ?? [];
@@ -85,7 +90,8 @@ export function EmbeddedAgentsTab({ dashboardId, base }: { dashboardId: string; 
           {selected && data && <AgentPanel key={selected.id} agent={selected} data={data} dashboardId={dashboardId} base={base} />}
         </div>
       )}
-      <CreateDialog open={creating} onOpenChange={setCreating} dashboardId={dashboardId} onCreated={select} />
+      <CreateDialog open={creating} onOpenChange={(v) => { setCreating(v); if (!v) setStartTemplate(null); }} dashboardId={dashboardId} onCreated={select}
+        templates={data?.catalog?.templates ?? []} initialTemplate={startTemplate} />
     </PageShell>
   );
 }
@@ -104,20 +110,29 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
   );
 }
 
-function CreateDialog({ open, onOpenChange, dashboardId, onCreated }: {
+function CreateDialog({ open, onOpenChange, dashboardId, onCreated, templates, initialTemplate }: {
   open: boolean; onOpenChange: (v: boolean) => void; dashboardId: string; onCreated: (id: string) => void;
+  templates: MachineTemplate[]; initialTemplate: string | null;
 }) {
   const toast = useToast();
   const refresh = useRefreshEmbedded(dashboardId);
   const [name, setName] = useState("");
   const [persona, setPersona] = useState("");
   const [instructions, setInstructions] = useState("");
+  const [template, setTemplate] = useState("");
   const [saving, setSaving] = useState(false);
-  useEffect(() => { if (open) { setName(""); setPersona(""); setInstructions(""); } }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    setName(""); setPersona(""); setInstructions("");
+    setTemplate(initialTemplate && templates.some((t) => t.id === initialTemplate) ? initialTemplate : "");
+  }, [open, initialTemplate, templates]);
   const submit = async () => {
     setSaving(true);
     try {
-      const r = await embeddedApi.create(dashboardId, { name: name.trim(), persona: persona.trim() || undefined, instructions: instructions.trim() || undefined });
+      const r = await embeddedApi.create(dashboardId, {
+        name: name.trim(), persona: persona.trim() || undefined, instructions: instructions.trim() || undefined,
+        machine_template: template || undefined,
+      });
       await refresh();
       onOpenChange(false);
       onCreated(r.agent.id);
@@ -139,6 +154,7 @@ function CreateDialog({ open, onOpenChange, dashboardId, onCreated }: {
           <Field label="Nom"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ex. Agent ERP du site de Lyon" /></Field>
           <Field label="Rôle"><Input value={persona} onChange={(e) => setPersona(e.target.value)} placeholder="ex. Assistant d'exploitation de l'ERP" /></Field>
           <Field label="Consignes"><Textarea rows={5} value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="Ce qu'il fait, ce qu'il ne fait jamais, à qui il rend compte" /></Field>
+          <Field label="Sa machine"><TemplateSelect templates={templates} value={template} onChange={setTemplate} /></Field>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Annuler</Button>
@@ -203,7 +219,7 @@ function AgentPanel({ agent, data, dashboardId, base }: { agent: EmbeddedAgent; 
     sync_level: draft.sync_level, knowledge_snapshot: draft.knowledge_snapshot, shell_enabled: draft.shell_enabled,
     cpus: Number(draft.cpus), memory_mb: Number(draft.memory_mb), disk_mb: Number(draft.disk_mb),
     apt_packages: splitList(lists.apt), pip_packages: splitList(lists.pip), npm_packages: splitList(lists.npm), egress: splitList(lists.egress),
-    seed_files: draft.seed_files, runtime_version: draft.runtime_version,
+    seed_files: draft.seed_files, runtime_version: draft.runtime_version, machine_template: draft.machine_template ?? null,
   }), "Réglages enregistrés");
   const exportZip = () => act("export", async () => {
     const r = await embeddedApi.export(agent.id);
@@ -223,6 +239,13 @@ function AgentPanel({ agent, data, dashboardId, base }: { agent: EmbeddedAgent; 
       </div>
 
       <Card title="La machine" icon={CpuIcon} hint="Le conteneur de l'agent : ses ressources, son shell, ce qu'on y installe et ce qu'on y dépose.">
+        <Field label="Machine du catalogue">
+          <TemplateSelect templates={data.catalog?.templates ?? []} value={draft.machine_template ?? ""} onChange={(id) => {
+            const t = (data.catalog?.templates ?? []).find((x) => x.id === id);
+            // Choisir une machine reprend ses ressources ; on peut ensuite les ajuster.
+            setDraft({ ...draft, machine_template: id || null, ...(t ? { cpus: t.cpus, memory_mb: t.memory_mb, disk_mb: t.disk_mb } : {}) });
+          }} />
+        </Field>
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label="Processeurs"><Input type="number" min={0.5} step={0.5} value={draft.cpus} onChange={(e) => set("cpus", Number(e.target.value))} /></Field>
           <Field label="Mémoire (Mo)"><Input type="number" min={256} step={256} value={draft.memory_mb} onChange={(e) => set("memory_mb", Number(e.target.value))} /></Field>
@@ -260,11 +283,13 @@ function AgentPanel({ agent, data, dashboardId, base }: { agent: EmbeddedAgent; 
             options={[
               ["connected", "Connecté", "Tout en direct."],
               ["intermittent", "Intermittent", "Réseau instable : ses écritures attendent le retour de la liaison, sa recherche passe sur la connaissance embarquée."],
-              ["isolated", "Isolé", "Outils locaux et connaissance embarquée seulement."],
+              ["isolated", "Isolé", "Aucune liaison : on lui parle sur le site, son journal s'importe ensuite ici."],
             ]}
-            soon={["isolated"]}
           />
         </Field>
+        {draft.connectivity === "isolated" && draft.llm_route !== "direct" && (
+          <p className="text-[12px] text-destructive">En mode isolé, le modèle doit être en accès direct (carte « Le modèle »).</p>
+        )}
         <Field label="Ce qui remonte des conversations">
           <Choice
             value={draft.sync_level} onChange={(v) => set("sync_level", v)}
@@ -360,6 +385,21 @@ function AgentPanel({ agent, data, dashboardId, base }: { agent: EmbeddedAgent; 
       </Card>
 
       <Card title="Instances" icon={PackageIcon} hint="Les conteneurs qui tournent. Une instance en ligne bat toutes les 15 s ; ses runs apparaissent sur la fiche de l'agent.">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className={cn("inline-flex h-9 cursor-pointer items-center rounded-md border border-border px-3 text-[13px] hover:bg-muted/50", busy === "import" && "pointer-events-none opacity-60")}>
+            {busy === "import" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <UploadSimpleIcon className="mr-1.5 h-4 w-4" />} Importer un journal
+            <input type="file" accept=".jsonl,.ndjson,.txt" className="hidden" onChange={(e) => {
+              const file = e.currentTarget.files?.[0];
+              e.currentTarget.value = "";
+              if (!file) return;
+              void act("import", async () => {
+                const r = await embeddedApi.importJournal(agent.id, await file.text());
+                toast.success("Journal importé", `${r.imported.conversations} conversation(s), ${r.imported.runs} run(s), ${r.imported.messages} message(s)`);
+              });
+            }} />
+          </label>
+          <span className="text-[12px] text-muted-foreground">Le journal d'une instance isolée (GET /api/journal sur le site).</span>
+        </div>
         {instances.length === 0 ? (
           <p className="text-[13px] text-muted-foreground">Aucune instance ne s'est encore annoncée.</p>
         ) : (
@@ -504,5 +544,33 @@ function IconBtn({ label, icon: Icon, onClick }: { label: string; icon: typeof P
     <Button size="sm" variant="ghost" onClick={onClick} title={label} aria-label={label}>
       <Icon className="h-4 w-4" />
     </Button>
+  );
+}
+
+const CATEGORY_LABEL: Record<string, string> = {
+  cyber: "Cybersécurité", data: "Data", dev: "Développement", ia: "IA et ML", web: "Web et collecte", ops: "Ops et cloud", docs: "Documents",
+};
+
+/** Une machine du catalogue (onglet Machines, Catalogue) : ses outils entrent dans le conteneur de l'agent. */
+function TemplateSelect({ templates, value, onChange }: { templates: MachineTemplate[]; value: string; onChange: (id: string) => void }) {
+  const groups = [...new Set(templates.map((t) => t.category))];
+  const current = templates.find((t) => t.id === value) ?? null;
+  return (
+    <div className="space-y-1">
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+        className="h-9 w-full rounded-md border border-input bg-background px-3 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <option value="">Machine de base (Node, Python, shell)</option>
+        {groups.map((g) => (
+          <optgroup key={g} label={CATEGORY_LABEL[g] ?? g}>
+            {templates.filter((t) => t.category === g).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </optgroup>
+        ))}
+      </select>
+      {current && (
+        <p className="text-[12px] text-muted-foreground">
+          {current.highlights.join(", ")} · <span className="font-mono">{templateShape(current)}</span>
+        </p>
+      )}
+    </div>
   );
 }

@@ -32,6 +32,8 @@ export interface EmbeddedConfig {
   seed_files: SeedFile[];
   shell_enabled: boolean;
   runtime_version: string;
+  /** Un modèle du catalogue des machines (0317) : ses outils entrent dans le conteneur. */
+  machine_template?: string | null;
 }
 
 export interface EmbeddedManifest {
@@ -49,6 +51,8 @@ export interface EmbeddedManifest {
   machine: {
     cpus: number; memory_mb: number; disk_mb: number; egress: string[]; shell: boolean;
     apt: string[]; pip: string[]; npm: string[]; seed_files: string[];
+    /** Le modèle du catalogue (absent : aucun). */
+    template?: string;
   };
   skills: Array<{ slug: string; name: string; description: string | null; category: string | null; instructions: string | null; tools: string[] | null }>;
   /** Les outils de la plateforme ouverts à l'agent (par ses pools), servis par la passerelle. */
@@ -58,7 +62,7 @@ export interface EmbeddedManifest {
 
 export const CONFIG_COLUMNS =
   "agent_id, workspace_id, project_id, service_dashboard_id, connectivity, llm_route, llm_base_url, llm_model, sync_level, " +
-  "knowledge_snapshot, cpus, memory_mb, disk_mb, egress, apt_packages, pip_packages, npm_packages, seed_files, shell_enabled, runtime_version";
+  "knowledge_snapshot, cpus, memory_mb, disk_mb, egress, apt_packages, pip_packages, npm_packages, seed_files, shell_enabled, runtime_version, machine_template";
 
 /** Les outils qui ne passent pas la passerelle : la machine d'équipe (le conteneur est sa machine). */
 export const LOCAL_ONLY = /^team_(shell|files|folders|jobs|install|browser)$/;
@@ -116,6 +120,7 @@ export async function compileManifest(admin: SupabaseClient, agentId: string): P
       cpus: config.cpus, memory_mb: config.memory_mb, disk_mb: config.disk_mb, egress: config.egress ?? [],
       shell: config.shell_enabled, apt: config.apt_packages ?? [], pip: config.pip_packages ?? [], npm: config.npm_packages ?? [],
       seed_files: config.seed_files.map((f) => f.path),
+      ...(config.machine_template ? { template: config.machine_template } : {}),
     },
     skills: (skills as Array<Record<string, unknown>>).map((s) => ({
       slug: String(s.slug), name: String(s.name), description: (s.description as string | null) ?? null,

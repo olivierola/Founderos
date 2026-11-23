@@ -17,6 +17,7 @@ Depuis la migration `0304_machines.sql`, une machine est une ressource à part e
 | Fichiers | Le système de fichiers **vu par un agent** : on choisit par quels yeux on regarde, et on lit ce que cet agent peut lire. Lecture seule ; chaque fichier ouvert par un humain est journalisé (`human_read`). |
 | Attributions | Une machine par équipe, et éventuellement une machine propre à un agent, qui passe avant celle de son équipe. |
 | Configuration | Nom, type, adresse, jeton propre, paquets système, pause, suppression. |
+| Catalogue | Des machines taillées par métier (cyber, data, dev, IA, web, ops, documents) : en créer une, ou y embarquer un agent (voir plus bas). |
 
 Les règles :
 
@@ -29,6 +30,16 @@ Les règles :
 - **L'activité** ne montre que les équipes de l'espace qui la demande : une machine de plateforme peut servir plusieurs espaces. Le superviseur rend les commandes (`ps` les montre déjà aux agents), jamais un journal ni un fichier. Pour lire, il faut passer par un agent et ses secrets.
 
 Le superviseur 0.2.0 ajoute deux opérations d'administration : `machine.info` (version, hôte, charge, mémoire, disque, limites) et `activity` (processus et jobs des équipes demandées).
+
+## Le catalogue : des machines taillées par métier (0317)
+
+Le sous-onglet **Catalogue** propose des machines prêtes pour un métier, par catégorie : Cybersécurité (reconnaissance, test d'intrusion web, analyse et réponse à incident), Data (analyse, ingénierie), Développement (web, Python, polyglotte), IA et ML (apprentissage automatique, notebooks), Web et collecte, Ops et cloud, Documents et OCR. Le catalogue est défini dans `backend/src/machines/catalog.ts` (une seule source, servie au front par la fonction `machines`).
+
+- **Une machine du catalogue** est une machine d'équipe (même superviseur, même isolement, un compte Linux par agent) dont l'image ajoute les outils du métier : `founderos/team-machine-<modèle>:<version>`, construite sur l'hôte à la première création (`docker build` depuis un Dockerfile généré, sans contexte), avec les ressources du modèle (CPU, mémoire). Les binaires setuid ajoutés par les paquets sont désarmés comme dans l'image de base.
+- **Créer cette machine** la crée à la demande (auto-hébergé) ; `machines.template` garde son modèle, la carte du parc l'affiche. On la donne ensuite à une équipe ou à un agent (Attributions).
+- **Embarquer un agent** ouvre l'onglet Agents embarqués avec ce modèle : `embedded_agent_configs.machine_template`, ses paquets entrent dans le conteneur de l'agent (même distribution, Debian bookworm) avant ses paquets propres, et ses ressources deviennent celles du conteneur.
+- Les outils de cybersécurité ne s'utilisent que sur des systèmes qu'on est autorisé à tester ; la carte le rappelle.
+- Un modèle ne change jamais de sens : on en ajoute, on n'en retire pas.
 
 ## Ce que voient les agents
 

@@ -14,6 +14,7 @@
 
 import { TextReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
 import type { EmbeddedConfig, EmbeddedManifest } from "./manifest.ts";
+import { templateById, templateLayer } from "../machines/catalog.ts";
 
 export const RUNTIME_IMAGE = "founderos/agent-runtime";
 
@@ -40,6 +41,8 @@ export function dockerfile(manifest: EmbeddedManifest, config: EmbeddedConfig): 
     `ARG RUNTIME_IMAGE=${RUNTIME_IMAGE}:${config.runtime_version}`,
     "FROM ${RUNTIME_IMAGE}",
     "USER root",
+    // La machine du catalogue d'abord (les outils de son métier), puis les paquets propres à l'agent.
+    ...(templateById(m.template) ? [`# Machine du catalogue : ${templateById(m.template)!.name}`, ...templateLayer(templateById(m.template)!)] : []),
     ...(m.apt.length ? [`RUN apt-get update && apt-get install -y --no-install-recommends ${shellList(m.apt)} && rm -rf /var/lib/apt/lists/*`] : []),
     ...(m.pip.length ? [`RUN pip3 install --no-cache-dir --break-system-packages ${shellList(m.pip)}`] : []),
     ...(m.npm.length ? [`RUN npm install -g ${shellList(m.npm)}`] : []),
@@ -70,6 +73,8 @@ export function composeFile(manifest: EmbeddedManifest, version: number): string
     `      INSTANCE_NAME: \${INSTANCE_NAME:-${slug}}`,
     `    cpus: ${m.cpus}`,
     `    mem_limit: ${m.memory_mb}m`,
+    // Isolé : on lui parle par son entrée locale (page et API, jeton LOCAL_TOKEN).
+    ...(manifest.connectivity === "isolated" ? ["    ports:", "      - \"${LOCAL_PORT:-8080}:8080\""] : []),
     "    volumes:",
     `      - ${slug}-data:/data`,
     `      - ${slug}-workspace:/workspace`,
@@ -81,6 +86,17 @@ export function composeFile(manifest: EmbeddedManifest, version: number): string
 }
 
 export function envExample(manifest: EmbeddedManifest, founderosUrl: string): string {
+  if (manifest.connectivity === "isolated") {
+    return [
+      "# Mode isolé : aucune liaison avec FounderOS.",
+      "# La clé du point d'accès du modèle (le manifeste porte son adresse).",
+      "LLM_API_KEY=",
+      "# Le jeton de l'entrée locale (page et API). Vide : généré au premier démarrage et écrit dans le journal du conteneur.",
+      "LOCAL_TOKEN=",
+      "LOCAL_PORT=8080",
+      "",
+    ].join("\n");
+  }
   return [
     "# L'adresse de FounderOS, telle que le conteneur la joint.",
     `FOUNDEROS_URL=${founderosUrl}`,
@@ -100,13 +116,23 @@ export function readme(manifest: EmbeddedManifest, version: number, sha: string)
     "",
     `Empreinte du manifeste : \`${sha.slice(0, 16)}\`. FounderOS la compare à celle que l'instance annonce : une instance qui ne tourne plus la configuration attendue est signalée.`,
     "",
+    ...(manifest.connectivity === "isolated" ? [
+      "## Mode isolé",
+      "",
+      "Cet agent n'a aucune liaison avec FounderOS. On lui parle sur le site par sa page (http://<hôte>:8080) ou son API, avec le jeton LOCAL_TOKEN. Il cherche dans sa connaissance embarquée, travaille dans `/workspace`, et son modèle est en accès direct.",
+      "",
+      "Toute son activité est tenue dans un journal : `GET /api/journal` (avec le jeton) le télécharge. Dans FounderOS, onglet Agents embarqués, « Importer un journal » rapporte ses conversations, ses runs et leurs étapes ; un même journal importé deux fois ne crée rien de plus.",
+      "",
+    ] : []),
     "## Lancer",
     "",
     "1. L'image du moteur, une fois par version, depuis le dépôt FounderOS :",
     "   ```",
     `   docker build -f embedded/Dockerfile -t ${RUNTIME_IMAGE}:${manifest.runtime_version} .`,
     "   ```",
-    "2. Une clé d'API pour cette instance : FounderOS, service, Agents embarqués, cet agent, Clés. Copiez `.env.example` en `.env` et collez-la.",
+    manifest.connectivity === "isolated"
+      ? "2. Copiez `.env.example` en `.env` : la clé du modèle et, si vous le voulez, le jeton de l'entrée locale."
+      : "2. Une clé d'API pour cette instance : FounderOS, service, Agents embarqués, cet agent, Clés. Copiez `.env.example` en `.env` et collez-la.",
     "3. ```",
     "   docker compose up -d --build",
     "   ```",

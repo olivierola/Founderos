@@ -6,7 +6,8 @@ import { Deno, defineHandler } from "../../compat/index.ts";
 //
 //   { action: "list",     dashboard_id }                                  lecteur
 //   { action: "create",   dashboard_id, name, description?, kind?, url?, token?, allow_system_packages? }   admin
-//   { action: "create",   dashboard_id, name, description?, provision: true, allow_system_packages? }     admin
+//   { action: "create",   dashboard_id, name, description?, provision: true, allow_system_packages?, template? }  admin
+//                         → template : un modèle du catalogue (machines/catalog.ts), l'image et les ressources de son métier
 //                         → la plateforme CRÉE la machine (0311) : conteneur, port, jeton ; réponse immédiate,
 //                           provision_state passe de creating à ready (ou failed) en arrière-plan
 //   { action: "update",   machine_id, name?, description?, kind?, url?, token?, allow_system_packages?, status? } admin
@@ -30,6 +31,7 @@ import { Deno, defineHandler } from "../../compat/index.ts";
 // il regarde.
 
 import { handleCors, jsonResponse } from "../_shared/cors.ts";
+import { catalog, templateById } from "../../machines/catalog.ts";
 import { createServiceClient } from "../_shared/supabase-admin.ts";
 import { requireWorkspaceMember, type WorkspaceRole } from "../_shared/authz.ts";
 import { assertSafeUrl } from "../_shared/ssrf.ts";
@@ -70,9 +72,11 @@ export default defineHandler(async (req) => {
         const name = str(body.name, 80);
         if (!name) return jsonResponse({ ok: false, error: "donnez un nom à la machine" }, { status: 400 });
         if (body.provision === true) {
+          const template = str(body.template, 60) || null;
+          if (template && !templateById(template)) return jsonResponse({ ok: false, error: "modèle de machine inconnu" }, { status: 400 });
           return jsonResponse(await provisionMachine(admin, board, {
-            name, description: str(body.description, 400) || null,
-            allowApt: body.allow_system_packages === true, userId: auth.userId,
+            name, description: str(body.description, 400) || templateById(template)?.summary || null,
+            allowApt: body.allow_system_packages === true, userId: auth.userId, template,
           }));
         }
         // Une machine branchée à la main : son adresse et son jeton, tous deux
@@ -251,7 +255,7 @@ async function provisionerStatus(): Promise<{ available: boolean; reason?: strin
  * conteneur en arrière-plan. La réponse n'attend pas Docker (une première
  * image se construit en minutes) : l'onglet suit provision_state.
  */
-async function provisionMachine(admin: Admin, board: Board, input: { name: string; description: string | null; allowApt: boolean; userId: string | null }) {
+async function provisionMachine(admin: Admin, board: Board, input: { name: string; description: string | null; allowApt: boolean; userId: string | null; template: string | null }) {
   const p = machineProvisioner();
   if (!p) throw new MachineError(501, "no_provisioner", "la création à la demande n'est disponible qu'avec la plateforme auto-hébergée (Docker de l'hôte)");
   const ready = await p.check();
@@ -259,7 +263,7 @@ async function provisionMachine(admin: Admin, board: Board, input: { name: strin
   const { data, error } = await admin.from("machines").insert({
     workspace_id: board.workspace_id, dashboard_id: board.id, name: input.name, description: input.description,
     kind: "docker", url: null, allow_system_packages: input.allowApt, created_by: input.userId,
-    managed_by: "docker", provision_state: "creating",
+    managed_by: "docker", provision_state: "creating", ...(input.template ? { template: input.template } : {}),
   }).select("*").single();
   if (error) throw new Error(error.message);
   const m = data as FleetMachine;
@@ -267,7 +271,7 @@ async function provisionMachine(admin: Admin, board: Board, input: { name: strin
   await setMachineToken(admin, m.id, token);
   void (async () => {
     try {
-      const { ref, url } = await p.create({ machineId: m.id, token, allowApt: input.allowApt });
+      const { ref, url } = await p.create({ machineId: m.id, token, allowApt: input.allowApt, template: input.template });
       await admin.from("machines").update({ managed_ref: ref, url, provision_state: "ready", last_error: null, updated_at: new Date().toISOString() }).eq("id", m.id);
       await probeMachine(admin, { ...m, managed_ref: ref, url, provision_state: "ready" });
     } catch (e) {
@@ -338,6 +342,7 @@ async function listFleet(admin: Admin, board: Board) {
         teams: [...teamAgents.entries()].filter(([, ids]) => ids.includes(a.id)).map(([id]) => id),
       })),
     provisioner: await provisionerStatus(),
+    catalog: catalog(),
   };
 }
 

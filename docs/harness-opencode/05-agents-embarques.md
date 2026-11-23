@@ -26,8 +26,9 @@ Un agent embarqué est la **troisième sorte d'agent**, à côté des collaborat
 
 **La connexion intermittente** : quand FounderOS ne répond pas, les écritures du pont (événements, statut, messages, consommation) attendent dans `/data/journal.jsonl`, dans l'ordre, et sont rejouées au retour de la liaison ; un run qui finit hors ligne est clos par le conteneur (sans contrat ni canaux), avec une note dans sa timeline. Les outils de la plateforme échouent proprement ; le modèle doit être en accès direct pour travailler hors ligne. Au démarrage, l'instance attend FounderOS au lieu de s'arrêter.
 
+**Le mode isolé** (`isolated.ts`, `local-store.ts`, `local-server.ts`, `import.ts`) : aucune liaison avec FounderOS. Le conteneur part de sa configuration figée, parle à son modèle en direct (exigé, vérifié à l'enregistrement), cherche dans sa connaissance embarquée, n'a aucun outil de la plateforme. On lui parle sur le site par sa page ou son API (port 8080, jeton `LOCAL_TOKEN`, généré au premier démarrage s'il manque). Toute son activité est tenue dans un journal (`/data/isolated.jsonl`, `GET /api/journal`) que l'onglet importe sous l'agent : conversations, messages, runs, étapes ; les identifiants sont gardés, donc réimporter n'ajoute que ce qui manque ; les réponses suivent le niveau de synchronisation ; un run resté en cours est clos à l'import. L'entrée du conteneur (`start.ts`) choisit le mode d'après le manifeste figé.
+
 **Limites connues :**
-- Le mode **isolé** reste à concevoir : sans aucune liaison, l'agent ne reçoit pas d'ordres ; il faut une entrée locale (une interface ou une API sur le site) et l'import de son journal dans FounderOS. Il est affiché « bientôt ».
 - Le moteur (`founderos/agent-runtime`) se construit depuis le dépôt ; il n'est pas encore publié sur un registre.
 
 ## 1. Pourquoi c'est faisable maintenant

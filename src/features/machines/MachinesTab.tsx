@@ -20,6 +20,7 @@ import { MachineFiles } from "./MachineFiles";
 import { MachineAssignments } from "./MachineAssignments";
 import { MachineConfig } from "./MachineConfig";
 import { KIND_ICON } from "./kinds";
+import { CATEGORY_ICON, MachineCatalog } from "./MachineCatalog";
 
 /**
  * Les machines du service (0304) : où les agents travaillent. Une machine est
@@ -32,10 +33,11 @@ import { KIND_ICON } from "./kinds";
  *   /machines/fichiers        le système de fichiers, vu par un agent
  *   /machines/attributions    qui travaille sur quelle machine
  *   /machines/configuration   nom, adresse, jeton, pause
+ *   /machines/catalogue       les machines taillées par métier (cyber, data, dev…)
  *
  * La machine choisie suit dans l'adresse (?m=), d'un sous-onglet à l'autre.
  */
-export type MachinesView = "overview" | "activite" | "fichiers" | "attributions" | "configuration";
+export type MachinesView = "overview" | "activite" | "fichiers" | "attributions" | "configuration" | "catalogue";
 
 const VIEW_TITLE: Record<MachinesView, { title: string; sub: string }> = {
   overview: { title: "Machines", sub: "Les postes où vos agents travaillent : un compte Linux par agent, un dossier par équipe." },
@@ -43,11 +45,12 @@ const VIEW_TITLE: Record<MachinesView, { title: string; sub: string }> = {
   fichiers: { title: "Fichiers", sub: "Le système de fichiers, tel qu'un agent le voit." },
   attributions: { title: "Attributions", sub: "Qui travaille sur quelle machine." },
   configuration: { title: "Configuration", sub: "Adresse, jeton, paquets système, pause." },
+  catalogue: { title: "Catalogue", sub: "Des machines taillées par métier : les outils de la cyber, de la data, du développement… Pour vos équipes, ou pour y embarquer un agent." },
 };
 
 
 export function MachinesTab({ dashboardId, base, sub }: { dashboardId: string; base: string; sub: string | null }) {
-  const view: MachinesView = (["activite", "fichiers", "attributions", "configuration"] as const).find((v) => v === sub) ?? "overview";
+  const view: MachinesView = (["activite", "fichiers", "attributions", "configuration", "catalogue"] as const).find((v) => v === sub) ?? "overview";
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const { data: fleet, isLoading, error } = useFleet(dashboardId);
@@ -94,7 +97,9 @@ export function MachinesTab({ dashboardId, base, sub }: { dashboardId: string; b
         <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
       ) : error ? (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-[13px] text-destructive">{error instanceof Error ? error.message : String(error)}</p>
-      ) : !fleet ? null : view === "attributions" ? (
+      ) : !fleet ? null : view === "catalogue" ? (
+        <MachineCatalog dashboardId={dashboardId} base={base} fleet={fleet} />
+      ) : view === "attributions" ? (
         <MachineAssignments dashboardId={dashboardId} fleet={fleet} />
       ) : machines.length === 0 ? (
         <EmptyFleet onAdd={() => setCreating(true)} />
@@ -177,7 +182,9 @@ function MachineCard({ machine: m, fleet, dashboardId, onOpen }: {
   const refresh = useRefreshFleet(dashboardId);
   const [probing, setProbing] = useState(false);
   const health = HEALTH_META[machineHealth(m)];
-  const Icon = KIND_ICON[m.kind] ?? DesktopTowerIcon;
+  const tpl = m.template ? fleet.catalog?.templates.find((t) => t.id === m.template) ?? null : null;
+  // Une machine du catalogue porte l'icône de son métier.
+  const Icon = (tpl && CATEGORY_ICON[tpl.category]) || (KIND_ICON[m.kind] ?? DesktopTowerIcon);
   const info = m.info ?? {};
   const here = fleet.assignments.filter((a) => a.machine_id === m.id && a.status === "active");
   const teams = here.filter((a) => a.scope === "team").length;
@@ -215,6 +222,7 @@ function MachineCard({ machine: m, fleet, dashboardId, onOpen }: {
           <div className="truncate text-[15px] font-semibold tracking-tight">{m.name}</div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-muted-foreground">
             <span>{KIND_LABEL[m.kind]}</span>
+            {tpl && <span className="rounded bg-muted px-1.5 py-px text-[11px] text-foreground/80">{tpl.name}</span>}
             {info.version && <span className="font-mono text-[11.5px]">v{info.version}</span>}
           </div>
         </div>

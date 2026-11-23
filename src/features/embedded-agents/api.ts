@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { callEdge } from "@/lib/edge";
+import type { MachineCatalog } from "@/features/machines/api";
 
 // Les agents embarqués d'un service (migration 0316, fonction embedded-agents) :
 // un agent FounderOS empaqueté avec sa machine (un conteneur) pour tourner
@@ -30,6 +31,8 @@ export interface EmbeddedConfig {
   seed_files: SeedFile[];
   shell_enabled: boolean;
   runtime_version: string;
+  /** 0317 : la machine du catalogue dont le conteneur reprend les outils. */
+  machine_template: string | null;
 }
 
 export interface EmbeddedAgent {
@@ -86,6 +89,7 @@ export interface EmbeddedList {
   /** La construction et le lancement sur le Docker de cet hôte : possibles, sinon pourquoi. */
   local: { ok: boolean; reason?: string };
   founderos_url: string;
+  catalog?: MachineCatalog;
 }
 
 const key = (dashboardId: string) => ["embedded_agents", dashboardId];
@@ -107,7 +111,7 @@ export function useRefreshEmbedded(dashboardId: string) {
 type Res = { ok: boolean; error?: string };
 
 export const embeddedApi = {
-  create: (dashboardId: string, input: { name: string; persona?: string; instructions?: string }) =>
+  create: (dashboardId: string, input: { name: string; persona?: string; instructions?: string; machine_template?: string }) =>
     callEdge<Res & { agent: { id: string; name: string } }>("embedded-agents", { action: "create", dashboard_id: dashboardId, ...input }),
   updateConfig: (agentId: string, patch: Partial<Omit<EmbeddedConfig, "agent_id">>) =>
     callEdge<Res>("embedded-agents", { action: "update_config", agent_id: agentId, ...patch }),
@@ -120,6 +124,9 @@ export const embeddedApi = {
     callEdge<Res>("embedded-agents", { action: "command", agent_id: agentId, command, ...(instanceId ? { instance_id: instanceId } : {}) }),
   runLocal: (agentId: string, instanceName: string) =>
     callEdge<Res & { build: EmbeddedBuild }>("embedded-agents", { action: "run_local", agent_id: agentId, instance_name: instanceName }),
+  importJournal: (agentId: string, journal: string) =>
+    callEdge<Res & { imported: { conversations: number; messages: number; runs: number; events: number; instance: string | null } }>(
+      "embedded-agents", { action: "import_journal", agent_id: agentId, journal }),
   stopLocal: (instanceId: string, volumes: boolean) =>
     callEdge<Res>("embedded-agents", { action: "stop_local", instance_id: instanceId, volumes }),
 };

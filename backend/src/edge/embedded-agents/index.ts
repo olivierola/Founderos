@@ -11,6 +11,7 @@ import { defineHandler } from "../../compat/index.ts";
 //   { action: "command",       agent_id, command, instance_id? }       membre (pause, resume, reload, stop)
 //   { action: "run_local",     agent_id, instance_name? }  construit et lance le conteneur sur ce Docker   admin
 //   { action: "stop_local",    instance_id, volumes? }                 admin
+//   { action: "import_journal", agent_id, journal }  le journal d'une instance isolée   admin
 //
 // L'agent lui-même (consignes, pools, skills, modèles) se règle sur sa fiche,
 // comme un collaborateur : un agent embarqué EST un agent FounderOS, seul
@@ -24,6 +25,9 @@ import { makeBundle, imageTag, slugOf } from "../../embedded/bundle.ts";
 import { newKey } from "../../embedded/keys.ts";
 import { compileManifest, CONFIG_COLUMNS, type EmbeddedConfig } from "../../embedded/manifest.ts";
 import { snapshotFor, toJsonl } from "../../embedded/knowledge.ts";
+import { importJournal } from "../../embedded/import.ts";
+import { catalog, templateById } from "../../machines/catalog.ts";
+import { syncText } from "../../embedded/gateway.ts";
 import { embeddedDocker } from "../../platform/embedded-docker.ts";
 
 type Body = Record<string, unknown> & { action?: string };
@@ -95,6 +99,7 @@ export default defineHandler(async (req) => {
           agents: agents ?? [], configs: configs.data ?? [], builds: builds.data ?? [], instances: instances.data ?? [], keys: keys.data ?? [],
           local: docker ? await docker.check() : { ok: false, reason: "La construction locale n'est disponible qu'en plateforme auto-hébergée : téléchargez l'archive et lancez-la ailleurs." },
           founderos_url: founderosUrl(),
+          catalog: catalog(),
         });
       }
 
@@ -111,8 +116,11 @@ export default defineHandler(async (req) => {
           deployment: "embedded", created_by: auth.userId, chat_enabled: true, mission_enabled: true,
         }).select("id, name").single();
         if (error) throw new Error(error.message);
+        // Parti d'une machine du catalogue : ses outils et ses ressources.
+        const tpl = templateById(str(body.machine_template, 60));
         const { error: cfgErr } = await admin.from("embedded_agent_configs").insert({
           agent_id: agent.id, workspace_id: board.workspace_id, project_id: board.project_id, service_dashboard_id: board.id,
+          ...(tpl ? { machine_template: tpl.id, cpus: tpl.cpus, memory_mb: tpl.memory_mb, disk_mb: tpl.disk_mb } : {}),
         });
         if (cfgErr) throw new Error(cfgErr.message);
         return jsonResponse({ ok: true, agent });
@@ -142,10 +150,17 @@ export default defineHandler(async (req) => {
         pick("pip_packages", Array.isArray, (v) => list(v) as never);
         pick("npm_packages", Array.isArray, (v) => list(v) as never);
         pick("runtime_version", (v) => /^[0-9a-z.-]{1,20}$/i.test(String(v)), (v) => String(v) as never);
+        pick("machine_template", (v) => v === null || !!templateById(String(v)), (v) => (v === null ? null : String(v)) as never);
         if (Array.isArray(body.seed_files)) {
           patch.seed_files = (body.seed_files as Array<Record<string, unknown>>).slice(0, 50)
             .map((f) => ({ path: str(f?.path, 200), content: typeof f?.content === "string" ? f.content.slice(0, 200_000) : "" }))
             .filter((f) => f.path);
+        }
+        // Isolé : aucune liaison avec FounderOS, donc pas de modèle par la plateforme.
+        const { data: current } = await admin.from("embedded_agent_configs").select("connectivity, llm_route, llm_base_url").eq("agent_id", agent.id).maybeSingle();
+        const next = { ...(current ?? {}), ...patch } as { connectivity?: string; llm_route?: string; llm_base_url?: string | null };
+        if (next.connectivity === "isolated" && (next.llm_route !== "direct" || !next.llm_base_url)) {
+          return jsonResponse({ ok: false, error: "En mode isolé, le modèle doit être en accès direct, avec son adresse." }, { status: 400 });
         }
         const { error } = await admin.from("embedded_agent_configs").update(patch).eq("agent_id", agent.id);
         if (error) throw new Error(error.message);
@@ -159,6 +174,19 @@ export default defineHandler(async (req) => {
         if (!auth.ok) return auth.response;
         const out = await exportVersion(agent.id, auth.userId);
         return jsonResponse({ ok: true, build: out.build, filename: out.filename, zip_base64: Buffer.from(out.bundle).toString("base64") });
+      }
+
+      case "import_journal": {
+        const agent = await loadAgent(str(body.agent_id));
+        if (!agent) return jsonResponse({ ok: false, error: "agent embarqué introuvable" }, { status: 404 });
+        const auth = await guard(agent.workspace_id, "admin");
+        if (!auth.ok) return auth.response;
+        const text = typeof body.journal === "string" ? body.journal : "";
+        if (!text.trim()) return jsonResponse({ ok: false, error: "journal vide" }, { status: 400 });
+        const { data: cfg } = await admin.from("embedded_agent_configs").select("sync_level").eq("agent_id", agent.id).maybeSingle();
+        const level = ((cfg as { sync_level?: string } | null)?.sync_level ?? "full") as "full" | "summary" | "metadata";
+        const result = await importJournal(admin, { agent, text, sync: (t) => syncText(level, t) });
+        return jsonResponse({ ok: true, imported: result });
       }
 
       case "create_key": {

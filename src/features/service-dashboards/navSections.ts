@@ -88,6 +88,7 @@ export const SECTIONS: Section[] = [
       { label: "Fichiers", icon: FolderOpenIcon, path: "machines/fichiers" },
       { label: "Attributions", icon: ShareNetworkIcon, path: "machines/attributions" },
       { label: "Configuration", icon: SlidersHorizontalIcon, path: "machines/configuration" },
+      { label: "Catalogue", icon: SquaresFourIcon, path: "machines/catalogue" },
     ],
   },
   {

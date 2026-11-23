@@ -4,7 +4,7 @@
 //
 // Lent (les migrations) : PLATFORM_E2E=0 le saute.
 
-const PORT = Number(process.env.EMBEDDED_E2E_PORT ?? 18793);
+const PORT = Number(process.env.EMBEDDED_E2E_PORT ?? 18796);
 process.env.PLATFORM = "self";
 process.env.DATABASE_URL = "pglite://memory";
 process.env.JWT_SECRET = "e2e-secret-e2e-secret-e2e-secret-e2e-secret";
@@ -378,6 +378,68 @@ describe("agents embarqués : manifeste, archive, passerelle", { skip, timeout: 
     const served = await gw("/knowledge/snapshot");
     assert.equal(served.status, 200, JSON.stringify(served.json));
     assert.equal(served.json!.enabled, true);
+  });
+
+  it("le journal d'une instance isolée s'importe sous l'agent, une seule fois, au niveau de synchronisation choisi", async () => {
+    const { mkdtemp, rm } = await import("node:fs/promises");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const { localStore } = await import("./local-store.ts");
+    const { importJournal } = await import("./import.ts");
+    const { syncText } = await import("./gateway.ts");
+    const dir = await mkdtemp(path.join(os.tmpdir(), "fos-import-"));
+    try {
+      // Le journal porte d'autres identifiants d'espace et de projet : l'import les ignore.
+      const local = await localStore({ agent: { id: "ailleurs", name: "x", workspace_id: "w", project_id: "p", harness: "opencode" }, file: path.join(dir, "j.jsonl"), instanceName: "site-lyon" });
+      const conv = await local.createConversation("Inventaire");
+      await local.addUserMessage(conv, "Combien de palettes ?");
+      const run = await local.store.createRun({ agent: { id: "ailleurs", name: "x", workspace_id: "w", project_id: "p", harness: "opencode" }, conversationId: conv, sessionId: "s", via: "chat" });
+      await local.store.insertEvent(run, "ailleurs", "status", { message: "recherche" });
+      await local.store.updateRun(run, { status: "succeeded", final_output: "42 palettes chez Durand." });
+      await local.store.insertAssistantMessage({ conversationId: conv, agentId: "ailleurs", runId: run, content: "42 palettes chez Durand.", tokensIn: 3, tokensOut: 4, costUsd: 0 });
+      const orphan = await local.store.createRun({ agent: { id: "ailleurs", name: "x", workspace_id: "w", project_id: "p", harness: "opencode" }, conversationId: conv, sessionId: "s2", via: "chat" });
+      const text = await local.journal();
+
+      const agentRow = { id: id.agent, workspace_id: id.ws, project_id: id.project };
+      const first = await importJournal(admin, { agent: agentRow, text, sync: (t) => syncText("metadata", t) });
+      assert.deepEqual({ ...first }, { conversations: 1, messages: 2, runs: 2, events: 1, instance: "site-lyon" });
+      const again = await importJournal(admin, { agent: agentRow, text, sync: (t) => syncText("metadata", t) });
+      assert.deepEqual([again.conversations, again.messages, again.runs, again.events], [0, 0, 0, 0], "réimporter n'ajoute rien");
+
+      const c = await one<{ agent_id: string; workspace_id: string }>("select agent_id, workspace_id from public.internal_agent_conversations where id = $1", [conv]);
+      assert.equal(c!.agent_id, id.agent);
+      assert.equal(c!.workspace_id, id.ws);
+      const msgs = await platform.db.query<{ role: string; content: string }>("select role, content from public.internal_agent_messages where conversation_id = $1 order by created_at", [conv]);
+      assert.equal(msgs[0].content, "Combien de palettes ?", "les messages de la personne restent");
+      assert.doesNotMatch(msgs[1].content, /Durand/, "la réponse suit le niveau « statuts et coûts »");
+      const r = await one<{ status: string; final_output: string; run_meta: Record<string, unknown> }>("select status, final_output, run_meta from public.internal_agent_runs where id = $1", [run]);
+      assert.equal(r!.status, "succeeded");
+      assert.doesNotMatch(r!.final_output, /Durand/);
+      assert.equal(r!.run_meta.isolated, true);
+      const o = await one<{ status: string }>("select status from public.internal_agent_runs where id = $1", [orphan]);
+      assert.equal(o!.status, "failed", "un run resté en cours sur l'instance est clos à l'import");
+      await assert.rejects(importJournal(admin, { agent: agentRow, text: "pas un journal", sync: (t) => t }), /vide ou illisible/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("un agent embarqué sur une machine du catalogue : ses outils entrent dans son conteneur", async () => {
+    const { compileManifest } = await import("./manifest.ts");
+    const { dockerfile } = await import("./bundle.ts");
+    // 0317 : le modèle se garde sur les machines du parc comme sur les agents embarqués.
+    await platform.db.query("select template from public.machines limit 0");
+    const before = await compileManifest(admin, id.agent);
+    assert.equal(before.manifest.machine.template, undefined, "sans modèle, le manifeste ne change pas");
+    await platform.db.command("update public.embedded_agent_configs set machine_template = 'data-analysis' where agent_id = $1", [id.agent]);
+    const { manifest, config, sha } = await compileManifest(admin, id.agent);
+    assert.equal(manifest.machine.template, "data-analysis");
+    assert.notEqual(sha, before.sha, "changer de machine se voit sur l'empreinte");
+    const df = dockerfile(manifest, config);
+    assert.match(df, /Machine du catalogue : Analyse de données/);
+    assert.match(df, /pip3 install .*'pandas'/);
+    assert.ok(df.indexOf("'pandas'") < df.indexOf("COPY manifest.json"), "les outils du métier avant la configuration");
+    await platform.db.command("update public.embedded_agent_configs set machine_template = null where agent_id = $1", [id.agent]);
   });
 
   it("une clé révoquée ne sert plus", async () => {

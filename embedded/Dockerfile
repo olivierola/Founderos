@@ -28,4 +28,4 @@ COPY backend/src ./src
 USER agent
 ENV NODE_ENV=production DATA_DIR=/data WORKSPACE_DIR=/workspace MANIFEST=/app/manifest.json
 # tsx se résout depuis /app/backend ; les sessions de l'agent travaillent dans /workspace.
-CMD ["node", "--import", "tsx", "src/embedded/runtime.ts"]
+CMD ["node", "--import", "tsx", "src/embedded/start.ts"]

@@ -45,7 +45,31 @@ export interface FleetMachine {
   managed_by?: "docker" | null;
   managed_ref?: string | null;
   provision_state?: "creating" | "ready" | "failed" | null;
+  /** 0317 : le modèle du catalogue dont elle est faite (null : machine d'équipe de base). */
+  template?: string | null;
 }
+
+/** Le catalogue des machines taillées par métier (backend/src/machines/catalog.ts). */
+export interface MachineCategory { id: string; label: string; summary: string }
+export interface MachineTemplate {
+  id: string;
+  category: string;
+  name: string;
+  summary: string;
+  highlights: string[];
+  apt: string[];
+  pip: string[];
+  npm: string[];
+  cpus: number;
+  memory_mb: number;
+  disk_mb: number;
+  note?: string;
+}
+export interface MachineCatalog { categories: MachineCategory[]; templates: MachineTemplate[] }
+
+/** « 4 CPU · 8 Go · 16 Go de disque » */
+export const templateShape = (t: Pick<MachineTemplate, "cpus" | "memory_mb" | "disk_mb">) =>
+  `${t.cpus} CPU · ${Math.round(t.memory_mb / 1024)} Go · ${Math.round(t.disk_mb / 1024)} Go de disque`;
 
 export interface Assignment {
   team_id: string;
@@ -69,6 +93,7 @@ export interface Fleet {
   agents: FleetAgent[];
   /** La création à la demande : possible ici, sinon pourquoi. */
   provisioner?: { available: boolean; reason?: string };
+  catalog?: MachineCatalog;
 }
 
 export interface Probe { reachable: boolean; error?: string; info?: MachineInfoSnapshot; latency_ms?: number; seen_at?: string }
@@ -173,7 +198,7 @@ export const fleetApi = {
   remove: (machineId: string, destroy?: boolean | "all") =>
     callEdge<Res>("machines", { action: "delete", machine_id: machineId, ...(destroy ? { destroy } : {}) }),
   /** Faire créer une machine par la plateforme (0311). */
-  provision: (dashboardId: string, input: { name: string; description?: string; allow_system_packages?: boolean }) =>
+  provision: (dashboardId: string, input: { name: string; description?: string; allow_system_packages?: boolean; template?: string }) =>
     callEdge<Res & { machine: FleetMachine; probe: Probe }>("machines", { action: "create", dashboard_id: dashboardId, provision: true, ...input }),
   probe: (machineId: string) => callEdge<Res & { probe: Probe }>("machines", { action: "probe", machine_id: machineId }),
   assign: (dashboardId: string, target: { type: "team" | "agent"; id: string }, machineId: string | null) =>

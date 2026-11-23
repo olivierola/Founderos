@@ -13,12 +13,17 @@
 //   TEAM_MACHINE_PORTS=8100-8199   ports locaux à distribuer
 //   TEAM_MACHINE_HOST=localhost    l'hôte par lequel ce backend joint les conteneurs
 //   TEAM_MACHINE_CPUS=4  TEAM_MACHINE_MEMORY=8g   limites de chaque conteneur
+//
+// Une machine du catalogue (machines/catalog.ts) part d'une image construite
+// pour son modèle (founderos/team-machine-<modèle>:<version>, team-machine et
+// les outils du métier), avec les ressources du modèle.
 
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { MachineProvisioner } from "../edge/_shared/team-machine.ts";
+import { machineDockerfile, templateById, templateImage, type MachineTemplate } from "../machines/catalog.ts";
 
 const backendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -73,6 +78,45 @@ function ensureImage(): Promise<void> {
   return imageReady;
 }
 
+/** docker build avec le Dockerfile sur l'entrée standard (aucun contexte : la couche n'a pas de COPY). */
+function buildFromStdin(tag: string, dockerfile: string, timeoutMs = 30 * 60_000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("docker", ["build", "-t", tag, "-"], { windowsHide: true });
+    let err = "";
+    const timer = setTimeout(() => child.kill(), timeoutMs);
+    child.stderr.on("data", (d) => { err = (err + String(d)).slice(-4000); });
+    child.stdout.on("data", () => {});
+    child.on("error", (e) => { clearTimeout(timer); reject(e); });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve();
+      else reject(new Error(err.trim().split(/\r?\n/).slice(-4).join(" ") || `docker build a échoué (${code})`));
+    });
+    child.stdin.end(dockerfile);
+  });
+}
+
+const templateReady = new Map<string, Promise<string>>();
+/** L'image d'un modèle du catalogue, construite une fois sur cet hôte. */
+function ensureTemplateImage(t: MachineTemplate): Promise<string> {
+  const tag = templateImage(IMAGE, t);
+  let p = templateReady.get(tag);
+  if (!p) {
+    p = (async () => {
+      await ensureImage();
+      try {
+        await docker(["image", "inspect", tag]);
+      } catch {
+        console.log(`[machines] image ${tag} absente : construction (${t.name}), quelques minutes`);
+        await buildFromStdin(tag, machineDockerfile(t, IMAGE));
+      }
+      return tag;
+    })().catch((e) => { templateReady.delete(tag); throw e; });
+    templateReady.set(tag, p);
+  }
+  return p;
+}
+
 function portFree(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const srv = net.createServer();
@@ -94,7 +138,8 @@ async function pickPort(): Promise<number> {
 const containerName = (machineId: string) => `founderos-tm-${machineId.replace(/-/g, "").slice(0, 12)}`;
 
 /** Les mêmes protections que team-machine/compose.yaml. */
-async function run(name: string, port: number, machineId: string, token: string, allowApt: boolean): Promise<void> {
+async function run(name: string, port: number, machineId: string, token: string, allowApt: boolean,
+  shape: { image: string; cpus: string; memory: string } = { image: IMAGE, cpus: CPUS, memory: MEMORY }): Promise<void> {
   await docker([
     "run", "-d", "--name", name, "--restart", "unless-stopped",
     "--label", `${LABEL}=${machineId}`, "--label", `${PORT_LABEL}=${port}`,
@@ -105,8 +150,8 @@ async function run(name: string, port: number, machineId: string, token: string,
     "--cap-drop", "ALL",
     ...["CHOWN", "DAC_OVERRIDE", "DAC_READ_SEARCH", "FOWNER", "FSETID", "SETUID", "SETGID", "SETPCAP", "KILL"].flatMap((c) => ["--cap-add", c]),
     "--security-opt", "no-new-privileges:true",
-    "--shm-size", "1g", "--pids-limit", "4096", "--memory", MEMORY, "--cpus", CPUS,
-    IMAGE,
+    "--shm-size", "1g", "--pids-limit", "4096", "--memory", shape.memory, "--cpus", shape.cpus,
+    shape.image,
   ], { env: { MACHINE_TOKEN: token } });
 }
 
@@ -141,13 +186,15 @@ export function dockerMachineProvisioner(): MachineProvisioner {
       }
     },
 
-    async create({ machineId, token, allowApt }) {
-      await ensureImage();
+    async create({ machineId, token, allowApt, template }) {
+      const t = templateById(template);
+      const image = t ? await ensureTemplateImage(t) : (await ensureImage(), IMAGE);
+      const shape = t ? { image, cpus: String(t.cpus), memory: `${t.memory_mb}m` } : { image, cpus: CPUS, memory: MEMORY };
       const name = containerName(machineId);
       const port = await serial(async () => {
         await docker(["rm", "-f", name]).catch(() => {});
         const p = await pickPort();
-        await run(name, p, machineId, token, allowApt);
+        await run(name, p, machineId, token, allowApt, shape);
         return p;
       });
       const url = `http://${HOST}:${port}`;
@@ -159,9 +206,16 @@ export function dockerMachineProvisioner(): MachineProvisioner {
     async reconfigure({ ref, token, allowApt }) {
       const port = await portOf(ref);
       const machineId = await docker(["inspect", "--format", `{{index .Config.Labels "${LABEL}"}}`, ref]);
+      // La même image et les mêmes limites : une machine du catalogue le reste.
+      const [image, nanoCpus, memBytes] = (await docker(["inspect", "--format", "{{.Config.Image}}|{{.HostConfig.NanoCpus}}|{{.HostConfig.Memory}}", ref])).split("|");
+      const shape = {
+        image: image || IMAGE,
+        cpus: Number(nanoCpus) > 0 ? String(Number(nanoCpus) / 1e9) : CPUS,
+        memory: Number(memBytes) > 0 ? `${Math.round(Number(memBytes) / 1048576)}m` : MEMORY,
+      };
       await serial(async () => {
         await docker(["rm", "-f", ref]);
-        await run(ref, port, machineId, token, allowApt);
+        await run(ref, port, machineId, token, allowApt, shape);
       });
       await waitHealthy(`http://${HOST}:${port}`, ref);
     },
