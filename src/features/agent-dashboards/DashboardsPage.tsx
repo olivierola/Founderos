@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { cn } from "@/lib/utils";
+import { PAGE_PAD, PAGE_TITLE } from "@/components/PageHeader";
 import { formatRelative } from "@/features/tracker/pickers";
 import { useLiteAgents } from "@/features/service-dashboards/live/teams";
 import {
@@ -71,15 +72,15 @@ export function DashboardsPage({ serviceId, workspaceId, projectId, sbase, agent
 
   return (
     <div className="min-h-full">
-      <div className="mx-auto w-full max-w-[1480px] px-6 py-8">
-        <div className="mb-8 flex flex-wrap items-center gap-3">
+      <div className={PAGE_PAD}>
+        <div className="mb-6 flex flex-wrap items-center gap-3">
           {agent && (
             <button onClick={() => navigate(`${sbase}/agent/${agent.id}`)} title={`Tableau de bord de ${agent.name}`}
               className="rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
               <ArrowLeftIcon className="h-4 w-4" />
             </button>
           )}
-          <h1 className="text-[30px] font-semibold tracking-tight">{agent ? `Dashboards de ${agent.name}` : "Dashboards"}</h1>
+          <h1 className={PAGE_TITLE}>{agent ? `Dashboards de ${agent.name}` : "Dashboards"}</h1>
           <div className="ml-auto flex items-center gap-2">
             <Button variant="outline" className="rounded-md" onClick={() => assistant.ask({ prompt: agent ? `Crée un dashboard rempli par ${agent.name} pour ` : "Crée-moi un dashboard pour ", newChat: true, agent: null })}>
               <SparkleIcon weight="duotone" className="mr-1.5 h-4 w-4" /> Demander à l'assistant

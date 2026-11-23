@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Automation10, type AppItem } from "@/components/ui/automation10";
 import { cn } from "@/lib/utils";
+import { PAGE_PAD, PAGE_SUB, PAGE_TITLE } from "@/components/PageHeader";
 import { BLOCK_BY_KIND, blockColorClass } from "./blocks";
 import { connectorActionProvider } from "@/features/internal-agents/connectorActionProviders";
 import {
@@ -48,11 +49,11 @@ export function WorkflowsList({ dashboardId, workspaceId, projectId, onOpen }: {
   }
 
   return (
-    <div className="w-full px-5 py-7 md:px-6">
-      <header className="mb-6 flex items-start gap-4">
+    <div className={PAGE_PAD}>
+      <header className="mb-6 flex flex-wrap items-start gap-4">
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-semibold tracking-tight">Workflows</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h1 className={PAGE_TITLE}>Workflows</h1>
+          <p className={PAGE_SUB}>
             Une <strong className="font-medium text-foreground">procédure</strong> est lue et exécutée
             par un agent. Une <strong className="font-medium text-foreground">automatisation</strong> est
             enchaînée telle quelle par le moteur, sans modèle.

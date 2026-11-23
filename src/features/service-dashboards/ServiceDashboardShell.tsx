@@ -28,6 +28,7 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { DASHBOARDS, dashboardLandingSlug } from "@/lib/navigation";
 import { ADMIN_LANDING } from "@/lib/admin-navigation";
 import { cn } from "@/lib/utils";
+import { PAGE_PAD_X } from "@/components/PageHeader";
 import { useLockDocumentScroll } from "@/hooks/useLockDocumentScroll";
 import { useBrandTheme } from "@/hooks/useBrandTheme";
 import { usePressFeedback } from "@/hooks/usePressFeedback";
@@ -382,7 +383,7 @@ export function ServiceDashboardPage() {
 /** Tools : les applications et les outils customisés, deux onglets d'une même page. */
 function ToolsTabs({ active, onSelect }: { active: "space" | "internal"; onSelect: (t: "space" | "internal") => void }) {
   return (
-    <div className="sticky top-0 z-10 flex gap-1 border-b border-border/60 bg-background px-6 pt-3">
+    <div className={cn("sticky top-0 z-10 flex gap-1 border-b border-border/60 bg-background pt-3", PAGE_PAD_X)}>
       {([["space", "Applications"], ["internal", "Outils customisés"]] as const).map(([k, label]) => (
         <button
           key={k} type="button" onClick={() => onSelect(k)}

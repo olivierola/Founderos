@@ -5,6 +5,7 @@ import {
 } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { PAGE_PAD_X } from "@/components/PageHeader";
 
 /**
  * Les primitives du module de suivi.
@@ -37,7 +38,7 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        "flex h-header shrink-0 items-center gap-2 border-b border-border px-4",
+        "flex h-header shrink-0 items-center gap-2 border-b border-border", PAGE_PAD_X,
         className,
       )}
     >

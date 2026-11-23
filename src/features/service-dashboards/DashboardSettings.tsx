@@ -16,6 +16,7 @@ import { useAuth } from "@/lib/auth-context";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { AvatarPicker } from "@/features/internal-agents/AvatarPicker";
 import { cn } from "@/lib/utils";
+import { PAGE_PAD_X, PAGE_SUB, PAGE_TITLE } from "@/components/PageHeader";
 import {
   updateServiceDashboard, deleteServiceDashboard, ensureOrchestrator, fetchRooms, deleteEmptyRooms,
   fetchServiceDashboard,
@@ -203,10 +204,10 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
   return (
     <div className="min-h-full">
       {/* Page head — big section title, Save on the right (mockup layout). */}
-      <div className="mx-auto flex max-w-3xl items-center gap-3 px-10 pb-2 pt-8">
+      <div className={cn("flex max-w-3xl items-center gap-3 pb-2 pt-7", PAGE_PAD_X)}>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-[30px] font-semibold tracking-tight">{sectionLabel}</h1>
-          <p className="mt-1 truncate text-sm text-muted-foreground">
+          <h1 className={cn(PAGE_TITLE, "truncate")}>{sectionLabel}</h1>
+          <p className={cn(PAGE_SUB, "truncate")}>
             {description || `Réglages du service « ${name || dashboard.name} ».`}
           </p>
         </div>
@@ -221,14 +222,14 @@ export function DashboardSettingsTab({ dashboard, workspaceId, projectId, sectio
         )}
       </div>
       {(error || warning) && (
-        <div className="mx-auto max-w-3xl px-10 pb-1 pt-2">
+        <div className={cn("max-w-3xl pb-1 pt-2", PAGE_PAD_X)}>
           <p className={cn("rounded-lg px-3 py-2 text-xs", error ? "bg-destructive/10 text-destructive" : "bg-amber-500/10 text-amber-600 dark:text-amber-400")}>
             {error ?? warning}
           </p>
         </div>
       )}
 
-      <div className="mx-auto flex max-w-3xl gap-8 px-10 py-8">
+      <div className={cn("flex max-w-3xl gap-8 py-7", PAGE_PAD_X)}>
         {/* Sections live in the sidebar panel (see ServiceDashboardShell); only
             narrow viewports, where that panel may be folded, get a switcher. */}
         <div className="min-w-0 flex-1">

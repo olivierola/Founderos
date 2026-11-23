@@ -15,7 +15,7 @@ import {
   CopyIcon as Copy,
   ArrowSquareOutIcon as ExternalLink,
 } from "@phosphor-icons/react";
-import { PageHeader } from "@/components/PageHeader";
+import { PAGE_PAD, PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -182,9 +182,9 @@ export function ComposioCatalog({ serviceDashboardId, scope: scopeProp }: {
 
   return (
     // Inside a service dashboard the <main> is flush (each tab brings its own
-    // padding, like the other tabs' px-10 py-8); in the AppShell the layout
+    // padding, PAGE_PAD like every tab); in the AppShell the layout
     // already pads, so don't double it.
-    <div className={cn(serviceDashboardId && "px-14 py-8 xl:px-20")}>
+    <div className={cn(serviceDashboardId && PAGE_PAD)}>
       {/* The scope is already named by the section's own navigation — one line
           of context here, not a paragraph repeating it. */}
       <PageHeader

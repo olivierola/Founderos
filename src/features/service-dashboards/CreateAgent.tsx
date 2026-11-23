@@ -15,6 +15,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
+import { PAGE_PAD, PAGE_SUB, PAGE_TITLE } from "@/components/PageHeader";
 import { AVATAR_OPTIONS, AvatarPicker } from "@/features/internal-agents/AvatarPicker";
 import { AGENT_TEMPLATES, type AgentTemplate } from "@/features/internal-agents/agentTemplates";
 import { diagnoseAgentInsertError } from "@/features/internal-agents/instantiateTemplate";
@@ -76,7 +77,7 @@ export function CreateAgentPage({ dashboardId, workspaceId, projectId }: {
   ];
 
   return (
-    <div className="min-h-full px-10 py-6">
+    <div className={cn(PAGE_PAD, "min-h-full")}>
       {/* Breadcrumb + the Build/Templates/Public switch, as in the mockup. */}
       <div className="relative flex items-center">
         <nav className="flex items-center gap-2 text-sm">
@@ -118,10 +119,10 @@ function BuildPublicAgent({ dashboardId, workspaceId, projectId, base }: {
   const [configuring, setConfiguring] = useState<PublicAgentPreset | null>(null);
 
   return (
-    <div className="mx-auto mt-8 max-w-6xl">
-      <div className="mb-7">
-        <h1 className="text-2xl font-semibold tracking-tight">Nouvel collaborateur public</h1>
-        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+    <div className="mt-8 max-w-6xl">
+      <div className="mb-6">
+        <h1 className={PAGE_TITLE}>Nouvel collaborateur public</h1>
+        <p className={cn(PAGE_SUB, "max-w-2xl")}>
           Il répond à vos clients depuis sa base de connaissances et s'intègre en widget sur votre
           site. Les modèles marqués « MCP » vont plus loin : ils interrogent votre boutique en
           direct, catalogue et stock compris.

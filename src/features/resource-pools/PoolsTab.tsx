@@ -23,7 +23,7 @@ import {
   XIcon, RobotIcon, UsersThreeIcon, BuildingsIcon, PlugsConnectedIcon, ShieldCheckIcon, DotsThreeIcon,
   ArrowRightIcon, TextAlignLeftIcon, MagicWandIcon,
 } from "@phosphor-icons/react";
-import { PageHeader } from "@/components/PageHeader";
+import { PAGE_PAD, PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { Button } from "@/components/ui/button";
@@ -135,7 +135,7 @@ function PoolsHome({ dashboardId, base, view }: { dashboardId: string; base: str
   ];
 
   return (
-    <div className="px-14 py-8 xl:px-20">
+    <div className={PAGE_PAD}>
       <PageHeader
         title="Pools"
         description="Des lots de ressources à donner à vos agents en une fois."
@@ -443,7 +443,7 @@ function PoolEditor({ poolId, dashboardId, onBack, base }: { poolId: string; das
 
   if (isLoading) {
     return (
-      <div className="px-14 py-8 xl:px-20">
+      <div className={PAGE_PAD}>
         {crumbs}
         <div className="space-y-6">
           <div className="space-y-2"><Skeleton className="h-7 w-64" /><Skeleton className="h-4 w-full max-w-md" /></div>
@@ -454,7 +454,7 @@ function PoolEditor({ poolId, dashboardId, onBack, base }: { poolId: string; das
   }
   if (!pool) {
     return (
-      <div className="px-14 py-8 xl:px-20">
+      <div className={PAGE_PAD}>
         {crumbs}
         <EmptyState icon={StackIcon} title="Pool introuvable" description="Il a peut-être été supprimé."
           action={<Button size="sm" variant="outline" onClick={onBack}>Revenir aux pools</Button>} />
@@ -511,7 +511,7 @@ function PoolEditor({ poolId, dashboardId, onBack, base }: { poolId: string; das
   }
 
   return (
-    <div className="px-14 py-8 xl:px-20">
+    <div className={PAGE_PAD}>
       {crumbs}
       <div className="flex items-start gap-4">
         <span className="mt-0.5 flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">

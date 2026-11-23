@@ -18,6 +18,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { PAGE_PAD_X, PAGE_SUB, PAGE_TITLE } from "@/components/PageHeader";
 import { useAuth } from "@/lib/auth-context";
 import { FloatingTabBar } from "@/features/service-dashboards/FloatingTabBar";
 import { IssuesBoard } from "./IssuesBoard";
@@ -286,15 +287,15 @@ export function TrackerTab({
   return (
     <div className="h-full overflow-y-auto">
       {palette}
-      <header className="flex h-header shrink-0 items-center justify-between px-4">
-        <div>
-          <h2 className="text-14 font-medium">Projets</h2>
-          <p className="text-11 text-muted-foreground">
+      <header className={cn("flex shrink-0 flex-wrap items-start justify-between gap-4 pb-2 pt-7", PAGE_PAD_X)}>
+        <div className="min-w-0 flex-1">
+          <h1 className={PAGE_TITLE}>Projets</h1>
+          <p className={PAGE_SUB}>
             Work items, cycles, modules, le suivi du travail de ce service.
           </p>
         </div>
         <Button
-          size="sm" className="h-8"
+          size="sm" className="h-8 shrink-0"
           onClick={() => setCreating(true)}
           disabled={!workspaceId || !projectId}
         >
@@ -322,7 +323,7 @@ export function TrackerTab({
           }
         />
       ) : (
-        <div className="grid gap-2 px-4 pb-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className={cn("grid gap-2 pb-4 md:grid-cols-2 xl:grid-cols-3", PAGE_PAD_X)}>
           {projects.map((p) => (
             <ProjectCard
               key={p.id} project={p}
@@ -412,7 +413,7 @@ function ProjectWorkspace({
           les sections secondaires (brouillons, archives, réglages) dans un menu
           plutôt qu'en barre — elles se visitent rarement et alourdiraient la
           navigation principale, déjà portée par la sidebar. */}
-      <header className="flex h-header shrink-0 items-center gap-2 border-b border-border px-4">
+      <header className={cn("flex h-header shrink-0 items-center gap-2 border-b border-border", PAGE_PAD_X)}>
         <button type="button" onClick={onBack} className="rounded p-1 hover:bg-muted" title="Tous les projets">
           <ArrowLeftIcon className="h-4 w-4" />
         </button>

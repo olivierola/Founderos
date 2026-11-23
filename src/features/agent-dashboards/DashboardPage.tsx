@@ -24,6 +24,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { cn } from "@/lib/utils";
+import { PAGE_PAD, PAGE_TITLE } from "@/components/PageHeader";
 import { formatRelative } from "@/features/tracker/pickers";
 import { useLiteAgents, type LiteAgent } from "@/features/service-dashboards/live/teams";
 import { agentAskHref } from "@/features/service-dashboards/agentView";
@@ -182,14 +183,14 @@ export function DashboardPage({ serviceId, dashboardId, sbase }: { serviceId: st
 
   return (
     <div className="min-h-full">
-      <div className="mx-auto w-full max-w-[1760px] px-4 pb-12 pt-5 lg:px-5">
+      <div className={cn(PAGE_PAD, "pb-12")}>
         {/* ── En-tête ── */}
         <div className="flex flex-wrap items-center gap-3">
           <button onClick={() => navigate(`${sbase}/dashboards`)} className="rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" title="Tous les dashboards">
             <ArrowLeftIcon className="h-4 w-4" />
           </button>
           <div className="min-w-0">
-            <h1 className="truncate text-[24px] font-semibold tracking-tight">
+            <h1 className={cn(PAGE_TITLE, "truncate")}>
               {applyParameters(dashboard.name, params)}
               {dashboard.is_template && <span className="ml-2 rounded-full bg-muted px-2 py-0.5 align-middle text-[11px] font-medium text-muted-foreground">Modèle</span>}
             </h1>

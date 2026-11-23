@@ -35,6 +35,7 @@ import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { useResizableWidth } from "@/hooks/useResizableWidth";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { cn } from "@/lib/utils";
+import { PAGE_PAD, PAGE_PAD_X, PAGE_SUB, PAGE_TITLE } from "@/components/PageHeader";
 import { useAssistant } from "@/lib/assistant-context";
 import {
   ChatTab, SettingsTab,
@@ -341,10 +342,10 @@ export function AgentsTab({ dashboardId }: { dashboardId: string }) {
   }
 
   return (
-    <div className="min-h-full px-6 py-8">
-      <div className="mx-auto max-w-[1480px]">
-        <div className="mb-10 flex flex-wrap items-center gap-3">
-          <h1 className="text-[30px] font-semibold tracking-tight">Collaborators</h1>
+    <div className={cn(PAGE_PAD, "min-h-full")}>
+      <div>
+        <div className="mb-6 flex flex-wrap items-center gap-3">
+          <h1 className={PAGE_TITLE}>Collaborators</h1>
           <div className="ml-auto flex items-center gap-2">
             <Button variant="outline" onClick={() => setCreatingFolder(true)} className="rounded-full">
               <FolderPlusIcon className="mr-1.5 h-3.5 w-3.5" /> Dossier
@@ -1300,11 +1301,11 @@ export function SchedulesTab({ dashboardId, workspaceId, projectId }: {
   const nextUp = rows.filter((m) => m.status === "active" && m.next_run_at).sort((a, b) => (a.next_run_at! < b.next_run_at! ? -1 : 1))[0]?.next_run_at ?? null;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5 p-6">
+    <div className={cn(PAGE_PAD, "space-y-5")}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-2 text-xl font-semibold"><ClockCountdownIcon className="h-5 w-5 text-amber-500" /> Planifications</h1>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">Faites tourner des missions d'collaborateurs automatiquement, à la cadence de votre choix, rapports récurrents, veilles, nettoyages… Le collaborateur exécute la mission et livre ses résultats.</p>
+          <h1 className={cn(PAGE_TITLE, "flex items-center gap-2")}><ClockCountdownIcon className="h-5 w-5 text-amber-500" /> Planifications</h1>
+          <p className={cn(PAGE_SUB, "max-w-xl")}>Faites tourner des missions d'collaborateurs automatiquement, à la cadence de votre choix, rapports récurrents, veilles, nettoyages… Le collaborateur exécute la mission et livre ses résultats.</p>
         </div>
         <Button onClick={() => setEditing("new")}><PlusIcon className="mr-1.5 h-4 w-4" /> Nouvelle planification</Button>
       </div>
@@ -1716,7 +1717,7 @@ export function WorkspaceMemoryTab({ workspaceId, dashboardId, projectId, view =
   const tab: "memory" | "rag" = part === "rag" ? "rag" : "memory";
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 gap-1 border-b border-border/60 px-6 pt-3">
+      <div className={cn("flex shrink-0 gap-1 border-b border-border/60 pt-3", PAGE_PAD_X)}>
         {([["memory", "Mémoire des agents", null], ["rag", "RAG", "rag"]] as const).map(([k, label, p]) => (
           <button
             key={k} onClick={() => onPart?.(p)}

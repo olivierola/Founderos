@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowLeftIcon, ArrowRightIcon, BookOpenIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
+import { PAGE_PAD, PAGE_SUB, PAGE_TITLE } from "@/components/PageHeader";
 import { DOC_SECTIONS, findArticle, neighbours, searchArticles } from "./content";
 import type { DocArticle } from "./types";
 
@@ -18,8 +19,10 @@ export function DocsPage({
   const article = findArticle(slug);
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      {article ? <Article article={article} onSelect={onSelect} /> : <Contents onSelect={onSelect} />}
+    <div className={PAGE_PAD}>
+      <div className="max-w-3xl">
+        {article ? <Article article={article} onSelect={onSelect} /> : <Contents onSelect={onSelect} />}
+      </div>
     </div>
   );
 }
@@ -38,8 +41,8 @@ function Contents({ onSelect }: { onSelect: (slug: string) => void }) {
           <BookOpenIcon className="h-4 w-4" />
           <span className="text-12 font-medium uppercase tracking-wide">Documentation</span>
         </div>
-        <h1 className="mt-1.5 text-2xl font-medium">Le tableau de service</h1>
-        <p className="mt-1.5 text-14 leading-relaxed text-muted-foreground">
+        <h1 className={cn(PAGE_TITLE, "mt-1.5")}>Le tableau de service</h1>
+        <p className={cn(PAGE_SUB, "leading-relaxed")}>
           Chaque écran du tableau, ce qu&apos;il sert à faire et comment s&apos;en
           servir. Pour suivre ce manuel avec de vraies données, commencez par{" "}
           <button
@@ -136,7 +139,7 @@ function Article({
         <ArrowLeftIcon className="h-3.5 w-3.5" /> Sommaire
       </button>
 
-      <h1 className="text-2xl font-medium">{article.title}</h1>
+      <h1 className={PAGE_TITLE}>{article.title}</h1>
 
       <div className="mt-5">{article.body()}</div>
 

@@ -11,7 +11,7 @@ import {
   WarningIcon as AlertTriangle, CheckCircleIcon as CheckCircle2, XCircleIcon as XCircle, CircleIcon as Dot,
   ArrowRightIcon as ArrowRight, GlobeIcon as Globe, CircleNotchIcon as Loader2,
 } from "@phosphor-icons/react";
-import { PageHeader } from "@/components/PageHeader";
+import { PAGE_PAD, PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/components/ToastProvider";
@@ -128,7 +128,7 @@ export function CustomConnectorsPage({ serviceDashboardId }: { serviceDashboardI
     connectorSetupIssues(c, (credentials ?? []).filter((x) => x.connector_id === c.id && x.status === "active").length);
 
   return (
-    <div className={cn(serviceDashboardId && "px-14 py-8 xl:px-20")}>
+    <div className={cn(serviceDashboardId && PAGE_PAD)}>
       <PageHeader
         title="Outils customisés"
         description="Vos propres outils pour vos collaborateurs : des API (Argo CD, Vault, Grafana, une API maison, une spec OpenAPI) et des serveurs MCP. Sur vos URL, avec vos accès ; chaque appel est borné, approuvé quand il le faut, et journalisé."

@@ -1,11 +1,13 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowRightIcon, ArrowUpIcon, SparkleIcon, UsersThreeIcon, CubeIcon } from "@phosphor-icons/react";
+import { ArrowRightIcon, SparkleIcon, UsersThreeIcon, CubeIcon } from "@phosphor-icons/react";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { Button } from "@/components/ui/button";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
+import { AgentChatInput } from "@/components/ui/agent-chat-input";
+import { PAGE_PAD, PAGE_SUB, PAGE_TITLE } from "@/components/PageHeader";
 import { useTeams, useLiteAgents, gatherTeam } from "@/features/service-dashboards/live/teams";
 import type { AgentTeam } from "@/features/service-dashboards/model";
 import { TeamzDialog, type TeamzRequest } from "./TeamzFlow";
@@ -48,10 +50,10 @@ export function TeamzTab({ dashboardId, dashboardName }: { dashboardId: string; 
   const catalog = TEAMZ_CATALOG.filter((t) => category === "Toutes" || t.category === category);
 
   return (
-    <div className="tz-accent w-full px-5 py-8 md:px-6">
+    <div className={cn("tz-accent", PAGE_PAD)}>
       <header className="max-w-2xl">
-        <h1 className="text-[26px] font-medium leading-[1.1] tracking-[-0.03em]">Équipes</h1>
-        <p className="mt-1.5 text-[14px] text-muted-foreground">
+        <h1 className={PAGE_TITLE}>Équipes</h1>
+        <p className={PAGE_SUB}>
           Des équipes d'agents prêtes à travailler. Décrivez la vôtre ou installez-en une.
         </p>
       </header>
@@ -106,10 +108,11 @@ export function TeamzTab({ dashboardId, dashboardName }: { dashboardId: string; 
 export function ArchitectBar({ onDesign }: { onDesign: (brief: string) => void }) {
   const [brief, setBrief] = useState("");
   const ready = brief.trim().length >= 12;
-  const send = () => { if (ready) onDesign(brief.trim()); };
+  // Le champ des agents (dictée, pièces jointes, longs collages en pastilles) :
+  // concevoir une équipe, c'est lui écrire.
   return (
-    <div className="mt-7 rounded-2xl border border-border bg-card transition-colors focus-within:border-foreground/25">
-      <div className="flex items-center gap-2.5 px-4 pt-3.5">
+    <section className="mt-7">
+      <div className="mb-3 flex items-start gap-2.5">
         <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
           <SparkleIcon weight="fill" className="h-3.5 w-3.5" />
         </span>
@@ -118,30 +121,25 @@ export function ArchitectBar({ onDesign }: { onDesign: (brief: string) => void }
           <div className="text-[12.5px] text-muted-foreground">Dites ce qu'elle doit faire, avec quels outils et à quel rythme. Les rôles, les consignes et le flux sont proposés pour validation.</div>
         </div>
       </div>
-      <textarea
+      <AgentChatInput
         value={brief}
-        onChange={(e) => setBrief(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-        rows={3}
+        onChange={setBrief}
+        onSubmit={(message) => { if (message.trim().length >= 12) onDesign(message.trim()); }}
+        disabled={!ready}
         placeholder="Ex. une équipe qui répond aux tickets Intercom en moins d'une heure et me fait un point chaque vendredi"
-        className="block max-h-56 min-h-[88px] w-full resize-none bg-transparent px-4 pb-2 pt-3 text-[14.5px] leading-relaxed outline-none placeholder:text-muted-foreground/60"
+        className="max-w-none"
       />
-      <div className="flex flex-wrap items-end justify-between gap-3 border-t border-border/60 px-3 py-2.5">
-        <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-          {ARCHITECT_PROMPTS.slice(0, 3).map((p) => (
-            <button
-              key={p} type="button" onClick={() => setBrief(p)} title={p}
-              className="max-w-[280px] truncate rounded-full border border-border px-3 py-1 text-[12px] text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground"
-            >
-              {p}
-            </button>
-          ))}
-        </div>
-        <Button size="sm" disabled={!ready} onClick={send} className="h-8 shrink-0 gap-1.5 rounded-md px-3.5">
-          Concevoir l'équipe <ArrowUpIcon className="h-3.5 w-3.5" weight="bold" />
-        </Button>
+      <div className="mt-2.5 flex flex-wrap gap-1.5">
+        {ARCHITECT_PROMPTS.slice(0, 3).map((p) => (
+          <button
+            key={p} type="button" onClick={() => setBrief(p)} title={p}
+            className="max-w-[280px] truncate rounded-full border border-border px-3 py-1 text-[12px] text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground"
+          >
+            {p}
+          </button>
+        ))}
       </div>
-    </div>
+    </section>
   );
 }
 
