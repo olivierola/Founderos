@@ -12,9 +12,19 @@
 //   POST /search/read      relire des sources
 //   POST /llm/chat/completions   le modèle, par la connexion de la plateforme
 //   POST /store            les écritures du pont (runs, événements, messages, consommation)
+//   POST /runs/step        après chaque étape : le contrôleur de boucle de la plateforme
+//   POST /runs/budget      le plafond du run et les crédits de l'espace
+//   POST /runs/settle      la fin d'un run : contrat, livrables, conversation, salle,
+//                          mission, workflow (lifecycle.ts), comme sur la plateforme
+//   POST /runs/question    l'agent pose une question : le run attend la personne
+//
+// Les quatre /runs rendent les gestes à faire DANS le conteneur (glisser une
+// consigne, relancer la session, passer au modèle lourd, interrompre) : la
+// décision est prise ici, la session est là-bas.
 //   POST /commands/take    l'ordre suivant pour cette instance
 //   POST /commands/done    un ordre exécuté
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import express, { Router, type NextFunction, type Request, type Response } from "express";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "../edge/_shared/supabase-admin.ts";
@@ -24,7 +34,10 @@ import { prepareAgentToolset } from "../agents/context.ts";
 import { guardToolCall, guardToolResult, loadAgentGuardrails } from "../harness/guard.ts";
 import { afterTool, beforeTool, researchFor } from "../harness/research.ts";
 import { usageToLlm } from "../harness/runtime.ts";
-import { supabaseStore, type HarnessStore } from "../harness/store.ts";
+import { supabaseStore, type BoundRun, type HarnessStore, type RunKind } from "../harness/store.ts";
+import { createController } from "../harness/controller.ts";
+import { createLifecycle } from "../harness/lifecycle.ts";
+import type { RunOutcome, RunQuestion, TrailEntry } from "../harness/bridge.ts";
 import { documentCollections, rpcSearchIndex, supabaseRpc } from "../harness/toolkit/grep.ts";
 import { resolveKey, type KeyOwner } from "./keys.ts";
 import { compileManifest, LOCAL_ONLY, loadConfig } from "./manifest.ts";
@@ -47,6 +60,26 @@ export function syncText(level: Owner["syncLevel"], text: string): string {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Un geste à faire dans la session du conteneur. */
+export type RunAction =
+  | { type: "steer"; text: string }
+  | { type: "prompt"; text: string }
+  | { type: "interrupt" }
+  | { type: "escalate"; model: string };
+
+const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+/** Le fil des appels envoyé par le conteneur, ramené à ce que lisent les contrôles. */
+function trailOf(v: unknown): TrailEntry[] {
+  if (!Array.isArray(v)) return [];
+  return v.slice(-400).map((t: Record<string, unknown>) => ({
+    name: String(t?.name ?? ""),
+    args: (t?.args && typeof t.args === "object" ? t.args : {}) as Record<string, unknown>,
+    ok: !!t?.ok,
+    result: String(t?.result ?? "").slice(0, 2000),
+  })).filter((t) => t.name);
+}
 
 /** Les champs d'un run que le conteneur peut écrire. */
 const RUN_PATCH = new Set([
@@ -247,10 +280,13 @@ export function embeddedGateway(): Router {
         case "createRun": {
           const input = (a[0] ?? {}) as Parameters<HarnessStore["createRun"]>[0];
           if (input.conversationId && !await ownConversation(input.conversationId)) return deny();
-          if (input.runId && !await ownRun(input.runId)) return deny();
+          // Un run est préparé par la plateforme (forwardToInstance) : le conteneur le reprend sans
+          // réécrire ses liaisons (salle, mission, workflow), que la fin du run lit ici. Seul un tour
+          // de chat arrivé après la fin du précédent se crée ici, sans liaison.
+          if (input.runId ? !await ownRun(input.runId) : !input.conversationId) return deny();
           const agent = await store.agent(o.agentId);
           if (!agent) return deny();
-          const runId = await store.createRun({ ...input, agent });
+          const runId = await store.createRun({ ...input, agent, meta: input.runId ? undefined : { kind: "chat", embedded: true } });
           if (typeof req.body?.instance_id === "string") {
             await admin().from("internal_agent_runs").update({ instance_id: req.body.instance_id }).eq("id", runId).eq("agent_id", o.agentId);
           }
@@ -298,6 +334,102 @@ export function embeddedGateway(): Router {
         default:
           return res.status(400).json({ error: `opération inconnue : ${op}` });
       }
+    } catch (e) { fail(res, e); }
+  });
+
+  // ── La conduite des runs : décidée ici, appliquée dans le conteneur ──
+  const pending = new AsyncLocalStorage<{ actions: RunAction[]; heavy: string | null }>();
+  const act = (a: RunAction) => { pending.getStore()?.actions.push(a); };
+  const controller = createController({
+    steer: async (_session, text) => act({ type: "steer", text }),
+    interrupt: async () => act({ type: "interrupt" }),
+    // Le conteneur dit quel serait son modèle lourd (null : il y est déjà).
+    escalate: async () => {
+      const heavy = pending.getStore()?.heavy ?? null;
+      if (heavy) act({ type: "escalate", model: heavy });
+      return heavy;
+    },
+    admin,
+  });
+  const lifecycle = createLifecycle({
+    prompt: async (_session, text) => act({ type: "prompt", text }),
+    abortReason: controller.abortReason,
+    forget: controller.forget,
+  });
+  /** Le run tel que la plateforme l'a préparé (ses liaisons viennent de la base, pas du conteneur). */
+  const boundRun = async (o: Owner, body: Record<string, unknown> | undefined): Promise<BoundRun | null> => {
+    const runId = String(body?.run_id ?? "");
+    if (!UUID.test(runId)) return null;
+    const { data } = await admin().from("internal_agent_runs")
+      .select("id, agent_id, workspace_id, project_id, conversation_id, run_meta, triggered_by").eq("id", runId).maybeSingle();
+    const r = data as { agent_id: string; workspace_id: string; project_id: string; conversation_id: string | null; run_meta: Record<string, unknown> | null; triggered_by: string | null } | null;
+    if (!r || r.agent_id !== o.agentId) return null;
+    const meta = r.run_meta ?? {};
+    return {
+      runId, sessionId: String(body?.session_id ?? ""), agentId: o.agentId, workspaceId: r.workspace_id, projectId: r.project_id,
+      conversationId: r.conversation_id, actingUserId: r.triggered_by, kind: (meta.kind as RunKind | undefined) ?? "chat", meta,
+    };
+  };
+  const conduct = async <T>(heavy: string | null, fn: () => Promise<T>) => {
+    const box = { actions: [] as RunAction[], heavy };
+    const result = await pending.run(box, fn);
+    return { result, actions: box.actions };
+  };
+  const notYours = (res: Response) => res.status(403).json({ error: "ce run n'est pas celui de l'agent" });
+
+  router.post("/runs/step", async (req, res) => {
+    try {
+      const run = await boundRun(owner(res), req.body);
+      if (!run) return notYours(res);
+      const { actions } = await conduct(typeof req.body?.heavy === "string" ? req.body.heavy : null, () =>
+        controller.afterStep(run, { trail: trailOf(req.body?.trail), steps: num(req.body?.steps), costUsd: num(req.body?.cost_usd) }));
+      res.json({ actions });
+    } catch (e) { fail(res, e); }
+  });
+
+  router.post("/runs/budget", async (req, res) => {
+    try {
+      const run = await boundRun(owner(res), req.body);
+      if (!run) return notYours(res);
+      res.json({ reason: await lifecycle.overBudget(run) });
+    } catch (e) { fail(res, e); }
+  });
+
+  router.post("/runs/settle", async (req, res) => {
+    const o = owner(res);
+    try {
+      const run = await boundRun(o, req.body);
+      if (!run) return notYours(res);
+      const raw = (req.body?.outcome ?? {}) as Record<string, unknown>;
+      const status = (["succeeded", "failed", "cancelled"] as const).find((s) => s === raw.status) ?? "failed";
+      const model = (raw.model ?? {}) as Record<string, unknown>;
+      const outcome: RunOutcome = {
+        status,
+        // Ce qui remonte de la réponse suit le niveau de synchronisation ; une erreur remonte toujours.
+        text: status === "succeeded" ? syncText(o.syncLevel, String(raw.text ?? "")) : String(raw.text ?? "").slice(0, 2000),
+        tokensIn: num(raw.tokensIn), tokensOut: num(raw.tokensOut), costUsd: num(raw.costUsd), toolCalls: num(raw.toolCalls),
+        model: { id: String(model.id ?? ""), provider: String(model.provider ?? "") },
+        trail: trailOf(raw.trail),
+      };
+      const { result, actions } = await conduct(null, () => lifecycle.settle(run, outcome, { content: o.syncLevel === "full" }));
+      res.json({ next: result, actions });
+    } catch (e) { fail(res, e); }
+  });
+
+  router.post("/runs/question", async (req, res) => {
+    try {
+      const run = await boundRun(owner(res), req.body);
+      if (!run) return notYours(res);
+      const q = (req.body?.question ?? {}) as Partial<RunQuestion>;
+      // La question remonte entière, quel que soit le niveau : sans elle, personne ne peut répondre.
+      await lifecycle.question(run, {
+        formId: String(q.formId ?? ""), sessionId: run.sessionId, title: String(q.title ?? "").slice(0, 2000),
+        fields: (Array.isArray(q.fields) ? q.fields : []).slice(0, 10).map((f) => ({
+          key: String(f?.key ?? ""), title: f?.title ? String(f.title) : undefined, description: f?.description ? String(f.description) : undefined,
+          options: Array.isArray(f?.options) ? f.options.map(String).slice(0, 12) : undefined, multiple: !!f?.multiple,
+        })),
+      });
+      res.json({ ok: true });
     } catch (e) { fail(res, e); }
   });
 

@@ -12,6 +12,10 @@
 //
 // Ses runs, sa timeline, ses messages et sa consommation remontent dans les
 // tables habituelles par le pont (bridge.ts) branché sur un magasin distant.
+// La conduite des runs reste celle de la plateforme (fos.runs) : contrôleur de
+// boucle après chaque étape, plafond de dépense, fin de run (contrat, livrables,
+// canaux, mission, salle, workflow), questions ; elle rend les gestes que ce
+// conteneur applique à sa session.
 //
 // Variables : FOUNDEROS_URL, FOUNDEROS_API_KEY, INSTANCE_NAME, MANIFEST,
 // DATA_DIR (/data), WORKSPACE_DIR (/workspace), LLM_API_KEY (accès direct).
@@ -37,6 +41,9 @@ const { toolCallScope } = await import("../harness/toolkit/plugin.ts");
 const { classifyRequest } = await import("../edge/_shared/model-router.ts");
 type AgentProfile = import("../harness/agent-profile.ts").AgentProfile;
 type HarnessStore = import("../harness/store.ts").HarnessStore;
+type BoundRun = import("../harness/store.ts").BoundRun;
+type TrailEntry = import("../harness/bridge.ts").TrailEntry;
+type RunAction = import("./sdk.ts").RunAction;
 type Kit = import("../harness/toolkit/plugin.ts").Kit;
 
 const log = (msg: string) => console.log(`[agent] ${new Date().toISOString()} ${msg}`);
@@ -142,7 +149,38 @@ const harness = await createHarness({
 });
 // Les sessions travaillent dans /workspace, le dossier de la machine.
 const host = { ...harness, agentDir: async () => workspaceDir };
-const bridge = startBridge(harness.opencode, store, { log });
+
+// ── La conduite des runs, par la plateforme ──
+const refOf = (run: BoundRun) => ({ run_id: run.runId, session_id: run.sessionId });
+const compact = (trail: TrailEntry[]) => trail.map((t) => ({ name: t.name, args: t.args, ok: t.ok, result: t.result.slice(0, 1500) }));
+/** Le modèle lourd de l'agent, s'il n'y est pas déjà pour cette session. */
+const heavyFor = (run: BoundRun) => {
+  const heavy = modelForRoute(profileOf(manifest), "heavy");
+  return heavy && state.turnModels.get(run.sessionId) !== heavy ? heavy : null;
+};
+/** Les gestes décidés par la plateforme, appliqués à la session locale. */
+async function apply(run: BoundRun, actions: RunAction[]) {
+  for (const a of actions) {
+    if (a.type === "steer") await harness.opencode.sessions.prompt({ sessionID: run.sessionId, text: a.text, delivery: "steer" });
+    else if (a.type === "prompt") await harness.opencode.sessions.prompt({ sessionID: run.sessionId, text: a.text });
+    else if (a.type === "interrupt") await harness.opencode.session.interrupt({ sessionID: run.sessionId });
+    else if (a.type === "escalate") state.turnModels.set(run.sessionId, a.model);
+  }
+}
+const bridge = startBridge(harness.opencode, store, {
+  log,
+  afterStep: async (run, info) => {
+    const { actions } = await fos.runs.step(refOf(run), { trail: compact(info.trail), steps: info.steps, cost_usd: info.costUsd, heavy: heavyFor(run) });
+    await apply(run, actions);
+  },
+  overBudget: (run) => fos.runs.budget(refOf(run)),
+  settle: async (run, outcome) => {
+    const { next, actions } = await fos.runs.settle(refOf(run), { ...outcome, trail: compact(outcome.trail) });
+    await apply(run, actions);
+    return next;
+  },
+  question: async (run, q) => { await fos.runs.question(refOf(run), q as unknown as Record<string, unknown>); },
+});
 bridgeRef = bridge;
 const agents = {
   state,
@@ -156,6 +194,8 @@ const deps = { harness: host, store, bridge, agents };
 const self = { id: agentId, name: manifest.agent.name, workspace_id: manifest.agent.workspace_id, project_id: manifest.agent.project_id, harness: "opencode" as const };
 
 // ── Les ordres ──
+const TASK_KINDS = ["mission", "room", "workflow", "a2a"] as const;
+type TaskKind = (typeof TASK_KINDS)[number];
 let paused = false;
 let stopping = false;
 
@@ -176,8 +216,9 @@ async function handle(cmd: { id: number; command: string; payload: Record<string
         });
         log(`tour de chat ${out.run_id}${out.injected ? " (message glissé dans le tour en cours)" : out.answered ? " (réponse à une question)" : ""}`);
       } else {
+        if (!TASK_KINDS.includes(kind as TaskKind)) { log(`ordre run : sorte « ${kind} » inconnue`); return; }
         const out = await startTaskRun(deps, {
-          agent: self, kind: kind as "mission", runId: (p.run_id as string | null) ?? null, text: String(p.text ?? ""),
+          agent: self, kind: kind as TaskKind, runId: (p.run_id as string | null) ?? null, text: String(p.text ?? ""),
           unattended: true, ...common,
         });
         log(`${kind} ${out.run_id}`);

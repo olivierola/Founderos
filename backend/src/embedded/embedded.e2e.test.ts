@@ -238,6 +238,96 @@ describe("agents embarqués : manifeste, archive, passerelle", { skip, timeout: 
     assert.equal(done!.instance_id, id.instance);
   });
 
+  it("un workflow confié à l'instance : run en file, liaisons en base, ordre « run »", async () => {
+    const { startAgentRun } = await import("../harness/runs.ts");
+    const { supabaseStore } = await import("../harness/store.ts");
+    const { usageToLlm } = await import("../harness/runtime.ts");
+    const rt = { store: supabaseStore(admin, usageToLlm) } as never;
+    const out = await startAgentRun(rt, {
+      agentId: id.agent, kind: "workflow", text: "Relance les commandes en retard de plus de 3 jours.",
+      meta: { workflow_run: { id: "00000000-0000-0000-0000-000000000001" } }, via: "workflow",
+    });
+    assert.equal(out.queued, true);
+    id.wfRun = out.run_id;
+    const run = await one<{ status: string; run_meta: Record<string, unknown> }>("select status, run_meta from public.internal_agent_runs where id = $1", [id.wfRun]);
+    assert.equal(run!.status, "queued");
+    assert.equal(run!.run_meta.kind, "workflow");
+    assert.deepEqual(run!.run_meta.workflow_run, { id: "00000000-0000-0000-0000-000000000001" });
+    const cmd = await one<{ command: string; payload: Record<string, unknown> }>(
+      "select command, payload from public.embedded_agent_commands where agent_id = $1 and command = 'run' order by id desc limit 1", [id.agent]);
+    assert.equal(cmd!.payload.kind, "workflow");
+    assert.equal(cmd!.payload.run_id, id.wfRun);
+    assert.match(String(cmd!.payload.run_context ?? ""), /run_context|commandes/i);
+  });
+
+  it("le conteneur reprend le run sans réécrire ses liaisons ; il ne crée pas de run hors d'une conversation", async () => {
+    const took = await gw("/store", { op: "createRun", args: [{ runId: id.wfRun, conversationId: null, sessionId: "ses_wf", via: "workflow", meta: { kind: "workflow", workflow_run: { id: "autre" } } }] });
+    assert.equal(took.status, 200, JSON.stringify(took.json));
+    const run = await one<{ status: string; opencode_session_id: string; run_meta: Record<string, unknown> }>(
+      "select status, opencode_session_id, run_meta from public.internal_agent_runs where id = $1", [id.wfRun]);
+    assert.equal(run!.status, "running");
+    assert.equal(run!.opencode_session_id, "ses_wf");
+    assert.deepEqual(run!.run_meta.workflow_run, { id: "00000000-0000-0000-0000-000000000001" }, "les liaisons restent celles de la plateforme");
+    const loose = await gw("/store", { op: "createRun", args: [{ conversationId: null, sessionId: "ses_x", via: "a2a" }] });
+    assert.equal(loose.status, 403);
+  });
+
+  it("la plateforme conduit les runs du conteneur : étape, fin de run, question", async () => {
+    await platform.db.command("update public.embedded_agent_configs set sync_level = 'full' where agent_id = $1", [id.agent]);
+    const ref = { run_id: id.wfRun, session_id: "ses_wf" };
+    const foreign = (await one<{ id: string }>(
+      "insert into public.internal_agent_runs (agent_id, workspace_id, project_id, status) values ($1, $2, $3, 'running') returning id",
+      [id.other, id.ws, id.project]))!.id;
+    assert.equal((await gw("/runs/step", { run_id: foreign, session_id: "s", trail: [], steps: 1, cost_usd: 0 })).status, 403);
+    const step = await gw("/runs/step", { ...ref, trail: [{ name: "grep", args: {}, ok: true, result: "3 lignes" }], steps: 1, cost_usd: 0.001, heavy: "e2e-heavy" });
+    assert.equal(step.status, 200, JSON.stringify(step.json));
+    assert.ok(Array.isArray(step.json!.actions));
+
+    // La réponse annonce un déploiement sans appel qui le prouve : la plateforme demande une reprise.
+    const outcome = (text: string) => ({ status: "succeeded", text, tokensIn: 10, tokensOut: 5, costUsd: 0, toolCalls: 1, model: { id: "m", provider: "p" }, trail: [] });
+    const retry = await gw("/runs/settle", { ...ref, outcome: outcome("J'ai bien déployé la nouvelle version.") });
+    assert.equal(retry.status, 200, JSON.stringify(retry.json));
+    assert.equal(retry.json!.next, "continue");
+    const prompt = (retry.json!.actions as Array<{ type: string; text?: string }>).find((a) => a.type === "prompt");
+    assert.match(String(prompt?.text), /VÉRIFICATION ÉCHOUÉE/);
+
+    const done = await gw("/runs/settle", { ...ref, outcome: outcome("Trois commandes relancées, le détail est dans le journal.") });
+    assert.equal(done.json!.next, "done");
+    const run = await one<{ status: string; final_output: string }>("select status, final_output from public.internal_agent_runs where id = $1", [id.wfRun]);
+    assert.equal(run!.status, "succeeded");
+    assert.match(run!.final_output, /Trois commandes relancées/);
+
+    // Une question dans un tour de chat : le run attend la personne, la question est dans la conversation.
+    const chatRun = (await one<{ id: string }>(
+      "insert into public.internal_agent_runs (agent_id, workspace_id, project_id, conversation_id, status, run_meta) values ($1, $2, $3, $4, 'running', '{\"kind\":\"chat\"}') returning id",
+      [id.agent, id.ws, id.project, id.conv]))!.id;
+    const asked = await gw("/runs/question", { run_id: chatRun, session_id: "ses_chat", question: { formId: "f1", title: "Quel entrepôt ?", fields: [{ key: "q", title: "Entrepôt", options: ["Lyon", "Lille"] }] } });
+    assert.equal(asked.status, 200, JSON.stringify(asked.json));
+    const waiting = await one<{ status: string; pending_question: Record<string, unknown> }>("select status, pending_question from public.internal_agent_runs where id = $1", [chatRun]);
+    assert.equal(waiting!.status, "awaiting_input");
+    assert.deepEqual(waiting!.pending_question.options, ["Lyon", "Lille"]);
+    const msg = await one<{ content: string }>("select content from public.internal_agent_messages where run_id = $1 order by created_at desc limit 1", [chatRun]);
+    assert.match(msg!.content, /Quel entrepôt/);
+  });
+
+  it("au niveau « statuts et coûts », la réponse reste sur l'instance", async () => {
+    await platform.db.command("update public.embedded_agent_configs set sync_level = 'metadata' where agent_id = $1", [id.agent]);
+    const chatRun = (await one<{ id: string }>(
+      "insert into public.internal_agent_runs (agent_id, workspace_id, project_id, conversation_id, status, run_meta) values ($1, $2, $3, $4, 'running', '{\"kind\":\"chat\"}') returning id",
+      [id.agent, id.ws, id.project, id.conv]))!.id;
+    const settled = await gw("/runs/settle", {
+      run_id: chatRun, session_id: "ses_m",
+      outcome: { status: "succeeded", text: "Le client Durand doit 4 200 €.", tokensIn: 1, tokensOut: 1, costUsd: 0, toolCalls: 0, model: { id: "m", provider: "p" }, trail: [] },
+    });
+    assert.equal(settled.json!.next, "done", JSON.stringify(settled.json));
+    const rows = await platform.db.query<{ content: string }>("select content from public.internal_agent_messages where run_id = $1", [chatRun]);
+    assert.ok(rows.length > 0);
+    assert.ok(rows.every((r) => !/Durand|4 200/.test(r.content)), JSON.stringify(rows));
+    const run = await one<{ status: string; final_output: string | null }>("select status, final_output from public.internal_agent_runs where id = $1", [chatRun]);
+    assert.equal(run!.status, "succeeded");
+    assert.doesNotMatch(String(run!.final_output ?? ""), /Durand/);
+  });
+
   it("une clé révoquée ne sert plus", async () => {
     await platform.db.command("update public.embedded_agent_api_keys set revoked_at = now() where id = $1", [id.key]);
     assert.equal((await gw("/manifest")).status, 401);

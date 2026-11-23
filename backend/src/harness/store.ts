@@ -21,6 +21,19 @@ export interface HarnessAgent {
 /** Ce qu'un run sert : une conversation, une mission, une salle, un workflow, un collègue. */
 export type RunKind = "chat" | "mission" | "room" | "workflow" | "a2a";
 
+/**
+ * Ce qui a déclenché un run, dans les valeurs que la base accepte (0268 :
+ * manual, schedule, api, chat, event). Une salle, un workflow ou un collègue
+ * sont des événements du système.
+ */
+export function triggeredVia(via: string | null | undefined): "manual" | "schedule" | "api" | "chat" | "event" {
+  const v = String(via ?? "").toLowerCase();
+  if (v === "chat" || v === "schedule" || v === "api" || v === "event" || v === "manual") return v;
+  if (v === "scheduler" || v === "cron") return "schedule";
+  if (v === "workflow" || v === "room" || v === "a2a" || v === "mission" || v === "trigger") return "event";
+  return "manual";
+}
+
 export interface BoundRun {
   runId: string;
   sessionId: string;
@@ -146,7 +159,7 @@ export function supabaseStore(
       const { data, error } = await admin.from("internal_agent_runs").insert({
         agent_id: agent.id, workspace_id: agent.workspace_id, project_id: agent.project_id,
         conversation_id: conversationId, status: "running", started_at: new Date().toISOString(),
-        triggered_via: via, opencode_session_id: sessionId, ...(meta ? { run_meta: meta } : {}),
+        triggered_via: triggeredVia(via), opencode_session_id: sessionId, ...(meta ? { run_meta: meta } : {}),
       }).select("id").single();
       if (error || !data) throw new Error(`run non créé : ${error?.message ?? "aucune ligne"}`);
       return (data as { id: string }).id;

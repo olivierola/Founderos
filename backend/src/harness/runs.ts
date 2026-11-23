@@ -35,7 +35,7 @@ import { startChatTurn, startTaskRun, type ChatTurn } from "./chat.ts";
 import { guardPrompt } from "./guard.ts";
 import { runResult } from "./lifecycle.ts";
 import type { HarnessRuntime } from "./runtime.ts";
-import type { HarnessAgent, RunKind } from "./store.ts";
+import { triggeredVia, type HarnessAgent, type RunKind } from "./store.ts";
 
 type Admin = SupabaseClient;
 
@@ -171,7 +171,7 @@ async function refuse(rt: HarnessRuntime, admin: Admin, agent: HarnessAgent, inp
     const { data } = await admin.from("internal_agent_runs").insert({
       agent_id: agent.id, workspace_id: agent.workspace_id, project_id: agent.project_id,
       conversation_id: input.conversationId ?? null, status: "failed", started_at: new Date().toISOString(),
-      finished_at: new Date().toISOString(), triggered_via: input.via ?? input.kind, error_message: message.slice(0, 500),
+      finished_at: new Date().toISOString(), triggered_via: triggeredVia(input.via ?? input.kind), error_message: message.slice(0, 500),
       run_meta: { kind: input.kind, ...(input.meta ?? {}) },
     }).select("id").single();
     runId = (data as { id: string } | null)?.id ?? null;
@@ -330,7 +330,9 @@ export async function startAgentRun(rt: HarnessRuntime, input: AgentRunInput): P
  * contrat, consigne de mission), puis confié à son conteneur par un ordre
  * « run » que l'instance prend (/embedded/v1/commands). Le run attend « en
  * file » jusqu'à ce qu'une instance le prenne ; ses étapes, sa réponse et sa
- * consommation remontent par la passerelle.
+ * consommation remontent par la passerelle, et sa fin (contrat, livrables,
+ * salle, mission, workflow, retour au collègue) passe par le même cycle de vie
+ * que sur la plateforme (/embedded/v1/runs).
  */
 async function forwardToInstance(rt: HarnessRuntime, admin: Admin, agent: HarnessAgent, row: AgentRow, input: AgentRunInput): Promise<ChatTurn> {
   const order = (payload: Record<string, unknown>) => admin.from("embedded_agent_commands").insert({
@@ -368,7 +370,7 @@ async function forwardToInstance(rt: HarnessRuntime, admin: Admin, agent: Harnes
     const meta = { kind: "chat", task: trimmed.slice(0, 2000), contract, embedded: true };
     const { data: run, error } = await admin.from("internal_agent_runs").insert({
       agent_id: agent.id, workspace_id: agent.workspace_id, project_id: agent.project_id, conversation_id: conversationId,
-      status: "queued", triggered_via: input.via ?? "chat", triggered_by: input.actingUserId ?? null, run_meta: meta,
+      status: "queued", triggered_via: triggeredVia(input.via ?? "chat"), triggered_by: input.actingUserId ?? null, run_meta: meta,
     }).select("id").single();
     if (error || !run) throw new Error(`run non créé : ${error?.message ?? "aucune ligne"}`);
     const runId = (run as { id: string }).id;
@@ -410,7 +412,30 @@ async function forwardToInstance(rt: HarnessRuntime, admin: Admin, agent: Harnes
     return { ok: true, run_id: r.id, queued: true };
   }
 
-  throw new RunRequestError(409, "Agent embarqué : il travaille dans son conteneur ; les salles, workflows et échanges entre agents ne lui sont pas encore ouverts.");
+  // Salle, workflow, collègue : la consigne vient de l'appelant, les liaisons du run restent en base.
+  const text = String(input.text ?? "").trim();
+  if (!text) throw new RunRequestError(400, "consigne vide");
+  const blocked = await guardPrompt(admin, row, input.runId ?? "", text).catch(() => null);
+  if (blocked) return refuse(rt, admin, agent, input, blocked);
+  const context = await runContext(admin, row, input.runId ?? null, input.kind, text, input.extraContext ? [input.extraContext] : []);
+  const meta = { kind: input.kind, task: text.slice(0, 2000), ...(input.meta ?? {}), embedded: true };
+  let runId = input.runId ?? null;
+  if (runId) {
+    const { data: r0 } = await admin.from("internal_agent_runs").select("agent_id, run_meta").eq("id", runId).maybeSingle();
+    const r = r0 as { agent_id: string; run_meta: Record<string, unknown> | null } | null;
+    if (!r || r.agent_id !== agent.id) throw new RunRequestError(404, "run introuvable");
+    await admin.from("internal_agent_runs").update({ run_meta: { ...(r.run_meta ?? {}), ...meta } }).eq("id", runId);
+  } else {
+    const { data: run, error } = await admin.from("internal_agent_runs").insert({
+      agent_id: agent.id, workspace_id: agent.workspace_id, project_id: agent.project_id,
+      status: "queued", triggered_via: triggeredVia(input.via ?? input.kind), triggered_by: input.actingUserId ?? null, run_meta: meta,
+    }).select("id").single();
+    if (error || !run) throw new Error(`run non créé : ${error?.message ?? "aucune ligne"}`);
+    runId = (run as { id: string }).id;
+  }
+  await order({ kind: input.kind, run_id: runId, text, run_context: context, meta, acting_user_id: input.actingUserId ?? null });
+  await note(runId);
+  return { ok: true, run_id: runId, queued: true };
 }
 
 /** Le harnais en service, ou une erreur claire (le moteur d'agents n'a pas démarré). */

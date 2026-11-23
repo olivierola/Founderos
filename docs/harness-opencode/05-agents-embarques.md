@@ -20,9 +20,9 @@ Un agent embarqué est la **troisième sorte d'agent**, à côté des collaborat
 | L'interface : onglet **Agents embarqués** (section Équipe), menu « Deploy collaborator », galerie « Agents embarqués » du roster | `src/features/embedded-agents/` |
 | Test de bout en bout (PGlite) : manifeste, accès direct, archive, passerelle, clés, ordres | `backend/src/embedded/embedded.e2e.test.ts` |
 
+**La conduite des runs reste celle de la plateforme** (`/embedded/v1/runs`) : après chaque étape le contrôleur de boucle, au plafond le budget, à la fin le cycle de vie (`lifecycle.ts` : contrat et preuves, livrables, conversation et canaux, salle, mission, workflow, retour au collègue), et les questions. La passerelle rend les gestes à faire dans la session du conteneur (consigne glissée, relance, modèle lourd, interruption). Les liaisons d'un run (salle, mission, workflow) sont lues en base, jamais reçues du conteneur. Hors du niveau « Tout », ni contrat relu sur la réponse, ni initiatives, ni graphe de connaissances : le contenu reste sur l'instance. Salles, workflows et échanges entre agents sont ouverts aux agents embarqués.
+
 **Limites connues :**
-- Un run exécuté dans le conteneur suit le chemin par défaut du pont : il écrit le message de l'agent et le statut du run. Les finaliseurs côté plateforme (canaux, vérification du contrat) ne s'appliquent pas encore.
-- Les salles, workflows et échanges entre agents sont refusés à un agent embarqué (409).
 - La connaissance embarquée (instantané des collections) est réglable, mais l'instantané n'est pas encore copié dans l'image : la recherche passe par la passerelle.
 - Le moteur (`founderos/agent-runtime`) se construit depuis le dépôt ; il n'est pas encore publié sur un registre.
 

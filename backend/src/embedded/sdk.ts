@@ -24,6 +24,16 @@ export interface ToolDefinition {
   parameters: Record<string, unknown>;
 }
 
+/** Un run du conteneur : son identifiant FounderOS et sa session locale. */
+export interface RunRef { run_id: string; session_id: string }
+
+/** Un geste que la plateforme demande dans la session : consigne, relance, modèle lourd, arrêt. */
+export type RunAction =
+  | { type: "steer"; text: string }
+  | { type: "prompt"; text: string }
+  | { type: "interrupt" }
+  | { type: "escalate"; model: string };
+
 export class FounderOSError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -105,6 +115,19 @@ export class FounderOS {
   store<T = unknown>(op: string, args: unknown[], instanceId?: string | null): Promise<T> {
     return this.request<{ result: T }>("POST", "/store", { op, args, ...(instanceId ? { instance_id: instanceId } : {}) }).then((r) => r.result);
   }
+
+  /**
+   * La conduite des runs par la plateforme : après chaque étape, au plafond, à
+   * la fin, à une question. Rend les gestes à faire dans la session locale.
+   */
+  readonly runs = {
+    step: (run: RunRef, info: { trail: unknown[]; steps: number; cost_usd: number; heavy: string | null }) =>
+      this.request<{ actions: RunAction[] }>("POST", "/runs/step", { ...run, ...info }, 60_000),
+    budget: async (run: RunRef) => (await this.request<{ reason: string | null }>("POST", "/runs/budget", run, 20_000)).reason,
+    settle: (run: RunRef, outcome: Record<string, unknown>) =>
+      this.request<{ next: "done" | "continue"; actions: RunAction[] }>("POST", "/runs/settle", { ...run, outcome }, 5 * 60_000),
+    question: (run: RunRef, question: Record<string, unknown>) => this.request("POST", "/runs/question", { ...run, question }, 60_000),
+  };
 
   readonly commands = {
     take: (instanceId: string) => this.request<{ command: { id: number; command: string; payload: Record<string, unknown> } | null }>("POST", "/commands/take", { instance_id: instanceId }, 20_000),

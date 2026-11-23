@@ -20,6 +20,10 @@
 //   question run « awaiting_input » avec la question et ses options, dans la
 //            conversation (et son canal) ; la réponse de la personne remplit le
 //            formulaire et le MÊME run reprend (chat.ts)
+//
+// Un agent embarqué dont le contenu reste sur son instance (sync_level summary
+// ou metadata) passe `content: false` : ni contrat relu sur sa réponse, ni
+// initiatives, ni graphe de connaissances ; les fins de run s'appliquent.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "../edge/_shared/supabase-admin.ts";
@@ -204,18 +208,18 @@ export function createLifecycle(deps: LifecycleDeps) {
     await event(admin, run, "status", { message: "Livrable matérialisé automatiquement (l'agent avait fini sans l'enregistrer)." });
   }
 
-  async function succeed(admin: Admin, run: BoundRun, agent: AgentRow, outcome: RunOutcome): Promise<"done" | "continue"> {
+  async function succeed(admin: Admin, run: BoundRun, agent: AgentRow, outcome: RunOutcome, content: boolean): Promise<"done" | "continue"> {
     const meta = metaOf(run);
     const kind = run.kind ?? "chat";
     const mission = kind === "mission" ? await loadMission(admin, meta.mission_id) : null;
-    if (await checks(admin, run, agent, outcome, mission) === "continue") return "continue";
+    if (content && await checks(admin, run, agent, outcome, mission) === "continue") return "continue";
 
     let final = outcome.text;
     await reportFallback(admin, run, agent, final);
     await salvageReportDraft(admin as never, agent, run.runId, { mission_id: meta.mission_id ?? null, conversation_id: run.conversationId });
 
     // Initiatives : seulement un run qui a vraiment travaillé, jamais une tâche de salle.
-    if (outcome.toolCalls >= 3 && !meta.mission_task && kind !== "a2a" && final.trim().length > 120) {
+    if (content && outcome.toolCalls >= 3 && !meta.mission_task && kind !== "a2a" && final.trim().length > 120) {
       const proposals = await reflectAndPropose(admin as never, {
         agentId: agent.id, workspaceId: agent.workspace_id ?? null, projectId: agent.project_id ?? null,
         goal: meta.contract?.goal || meta.task || "",
@@ -265,7 +269,7 @@ export function createLifecycle(deps: LifecycleDeps) {
     remember(run.runId, "succeeded", final);
     // Ce que le run a trouvé en cherchant devient une mémoire pour la prochaine fois.
     await persistFindings(run.runId).catch(() => {});
-    captureKnowledgeInBackground(admin as never, {
+    if (content) captureKnowledgeInBackground(admin as never, {
       workspaceId: agent.workspace_id, projectId: agent.project_id, agentId: agent.id, runId: run.runId,
       text: final, context: kind === "mission" ? `Mission : ${mission?.title ?? ""}` : String(meta.task ?? "").slice(0, 1500),
     });
@@ -320,7 +324,7 @@ export function createLifecycle(deps: LifecycleDeps) {
   }
 
   return {
-    async settle(run: BoundRun, outcome: RunOutcome): Promise<"done" | "continue"> {
+    async settle(run: BoundRun, outcome: RunOutcome, opts: { content?: boolean } = {}): Promise<"done" | "continue"> {
       const admin = createServiceClient() as unknown as Admin;
       const agent = await loadAgentAndTools(run.agentId).then((r) => r.agent).catch(() => null);
       if (outcome.status === "succeeded") {
@@ -329,7 +333,7 @@ export function createLifecycle(deps: LifecycleDeps) {
           return "done";
         }
         try {
-          const next = await succeed(admin, run, agent, outcome);
+          const next = await succeed(admin, run, agent, outcome, opts.content !== false);
           if (next === "done") deps.forget?.(run.runId);
           return next;
         } catch (e) {
