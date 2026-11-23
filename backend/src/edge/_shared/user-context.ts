@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/user-context.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Contexte utilisateur signé par FounderOS (docs/enterprise-generalisation.md G2).
 //

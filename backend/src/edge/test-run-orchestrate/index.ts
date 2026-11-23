@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/test-run-orchestrate/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno, defineHandler } from "../../compat/index.ts";
 
 // test-run-orchestrate — user-facing control of an agentic E2E test run.

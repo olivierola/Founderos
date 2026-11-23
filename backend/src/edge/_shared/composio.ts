@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/composio.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno } from "../../compat/index.ts";
 
 // _shared/composio.ts — thin wrapper around the Composio SDK, the new

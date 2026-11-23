@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/rag-activation-feedback/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { defineHandler } from "../../compat/index.ts";
 
 // rag-activation-feedback — records the outcome of a proactive intervention.

@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/self-model.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // La CONSCIENCE DE SOI d'un agent : ce qu'il sait de lui-même au moment d'agir.
 //

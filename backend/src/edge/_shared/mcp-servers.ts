@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/mcp-servers.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Les serveurs MCP d'un run, prêts à appeler : en-têtes statiques déchiffrés,
 // jeton OAuth rafraîchi, jeton d'API, outils filtrés par le catalogue.

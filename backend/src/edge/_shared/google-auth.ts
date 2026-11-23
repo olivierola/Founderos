@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/google-auth.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Mint a Google OAuth2 access token from a service-account JSON, using a signed
 // JWT (RS256) → token exchange. Used to call Firestore / Identity Toolkit REST

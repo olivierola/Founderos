@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/cron.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Le cron : le calculer, le décrire, et le construire sans l'écrire.
 //

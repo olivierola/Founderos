@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/security-checks.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Passive, non-destructive security checks runnable in an edge function (no
 // special network needed). They detect exposure and prove it, never exploit.

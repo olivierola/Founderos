@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/mcp-oauth/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { defineHandler } from "../../compat/index.ts";
 
 // mcp-oauth — drive the MCP OAuth 2.1 authorization flow for a server.

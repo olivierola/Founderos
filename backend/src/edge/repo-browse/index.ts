@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/repo-browse/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { defineHandler } from "../../compat/index.ts";
 
 // repo-browse — on-demand read access to a connected GitHub repo, using the

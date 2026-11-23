@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/resolveai.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // ResolveAI — le tri des demandes reçues par un agent public.
 //

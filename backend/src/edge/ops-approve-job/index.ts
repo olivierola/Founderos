@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/ops-approve-job/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { defineHandler } from "../../compat/index.ts";
 
 // ops-approve-job — approve, cancel, or rollback an Ops job.

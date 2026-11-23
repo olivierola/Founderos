@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/dashboard-spec.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Les dashboards d'agents (0301) : ce qui est partagé entre le navigateur et
 // les agents. Aucun import, aucun accès réseau : le front l'importe tel quel

@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/team-life.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // La VIE D'ÉQUIPE : ce que les agents font entre eux sans qu'on le leur demande.
 //

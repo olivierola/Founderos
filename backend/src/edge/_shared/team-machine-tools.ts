@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/team-machine-tools.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Les outils de la machine d'équipe (0296) — team_shell, team_files,
 // team_folders, team_jobs, team_install.

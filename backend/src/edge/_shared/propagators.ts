@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/propagators.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Propagators: push (key, value) to a customer's backend secrets store.
 // Each propagator receives the credential payload of the target connector

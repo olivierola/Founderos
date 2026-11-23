@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/ssrf.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno } from "../../compat/index.ts";
 
 // Garde anti-SSRF pour les requêtes sortantes dont l'URL vient de l'appelant.

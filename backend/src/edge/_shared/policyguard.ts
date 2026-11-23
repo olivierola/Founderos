@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/policyguard.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // PolicyGuard — ce qu'un agent a le droit de faire seul, par équipe et par
 // environnement, et la trace de chaque décision.

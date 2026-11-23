@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/teams.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno } from "../../compat/index.ts";
 
 // Microsoft Teams / Bot Framework helper — proactive messaging into a Teams

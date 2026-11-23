@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/execute-admin-action/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno, FUNCTIONS_URL, defineHandler } from "../../compat/index.ts";
 
 // execute-admin-action — runs a sensitive action and records it in admin_actions.

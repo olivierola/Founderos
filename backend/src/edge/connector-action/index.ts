@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/connector-action/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno, defineHandler } from "../../compat/index.ts";
 
 // connector-action — execute a safe, read-mostly action against a connected

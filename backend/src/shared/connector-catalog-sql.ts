@@ -7,7 +7,7 @@
 // TypeScript fait échouer connector-catalog.test.ts : on régénère alors ce
 // bloc dans une nouvelle migration.
 //
-//   npm run port:edge && npx tsx src/shared/connector-catalog-sql.ts > bloc.sql
+//   npx tsx src/shared/connector-catalog-sql.ts > bloc.sql
 
 import { CONNECTOR_ACTIONS } from "../edge/_shared/connector-actions.ts";
 

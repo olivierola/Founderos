@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/messaging.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Envoyer vers Telegram, Discord et WhatsApp — les messageries servies par
 // `messaging-gateway` (Slack et Teams gardent leurs propres modules).

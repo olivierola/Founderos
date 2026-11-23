@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/mcp-relay.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Un serveur MCP derrière le pare-feu du client, joint par son relais
 // (docs/enterprise-generalisation.md G2).

@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/connector-actions.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Connector actions — safe, read-mostly operations that agents can run against
 // connected third-party tools (CRM / HR). Each provider declares a set of named

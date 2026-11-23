@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/send-bulk-email/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { defineHandler } from "../../compat/index.ts";
 
 // send-bulk-email — personalized bulk email via Resend.

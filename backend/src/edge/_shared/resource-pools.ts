@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/resource-pools.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // La passerelle de ressources, à l'exécution (migration 0291).
 //

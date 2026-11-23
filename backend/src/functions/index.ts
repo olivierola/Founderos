@@ -1,6 +1,6 @@
 // Fonctions réécrites en Express. Elles gardent leur nom et leur chemin
 // (/functions/v1/<nom>) et remplacent la copie générée du même nom :
-// scripts/port-edge.mjs ne génère pas une fonction qui a un fichier ici.
+// Une fonction réécrite ici remplace celle de src/edge/ (retirer cette dernière du registre).
 
 import express, { Router, type RequestHandler } from "express";
 import { deleteWorkspace } from "./delete-workspace.ts";

@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/office-rag.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Shared grounding for the Office AI: latest code-scan understanding of the
 // product + semantic search over the project's RAG knowledge base.

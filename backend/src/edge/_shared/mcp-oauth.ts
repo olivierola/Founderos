@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/mcp-oauth.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // MCP OAuth 2.1 helper (the MCP "Authorization" spec) for Deno edge functions.
 // Covers: 401 probe + resource/authorization-server metadata discovery

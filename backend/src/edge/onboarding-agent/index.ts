@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/onboarding-agent/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno, defineHandler } from "../../compat/index.ts";
 
 // onboarding-agent — backend for the live GUI onboarding co-pilot powered by

@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/machines/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno, defineHandler } from "../../compat/index.ts";
 
 // machines — le parc de machines d'un espace (0304), côté humains.

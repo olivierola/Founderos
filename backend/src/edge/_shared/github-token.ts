@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/github-token.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Resolve a usable GitHub token for a project, REUSING the GitHub connection the
 // user established in the Connectors tab (Composio) when present, and falling

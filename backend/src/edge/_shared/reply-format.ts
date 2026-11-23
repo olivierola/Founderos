@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/reply-format.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // La forme des réponses : une règle de typographie posée sur TOUS les appels
 // de chat (adaptChatBody), et la doctrine d'affichage des surfaces de chat

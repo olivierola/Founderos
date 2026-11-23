@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/mcp-observe.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Audit et métriques des appels MCP, côté FounderOS (installation dédiée,
 // docs/openshift-implementation.md D7).

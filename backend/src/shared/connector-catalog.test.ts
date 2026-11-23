@@ -26,6 +26,6 @@ describe("catalogue des connecteurs maison", () => {
     const sql = readFileSync(join(MIGRATIONS, latest!), "utf8").replace(/\r\n/g, "\n");
     assert.ok(sql.includes(catalogSql()),
       `${latest} ne correspond plus à _shared/connector-actions.ts. Régénérez le bloc dans une NOUVELLE migration : ` +
-      "cd backend && npm run port:edge && npx tsx src/shared/connector-catalog-sql.ts");
+      "cd backend && npx tsx src/shared/connector-catalog-sql.ts");
   });
 });

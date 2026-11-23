@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/agent-dashboards.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno, FUNCTIONS_URL } from "../../compat/index.ts";
 
 // Les dashboards d'agents (0301), côté serveur : l'outil que les collaborateurs

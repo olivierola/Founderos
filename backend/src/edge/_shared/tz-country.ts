@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/tz-country.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // GÉNÉRÉ depuis tzdata (zone1970.tab + backward) — ne pas éditer à la main.
 // Fuseau IANA → code pays ISO-3166 alpha-2. Sert de repli quand l'edge ne

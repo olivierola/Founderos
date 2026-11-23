@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/assistant-connectors.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // L'assistant et les outils internes (connecteurs personnalisés, 0267).
 //

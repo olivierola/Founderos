@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/workflow-doc.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // The workflow LANGUAGE: what a block means, how blocks relate, and how the
 // whole thing becomes the markdown playbook an agent executes.

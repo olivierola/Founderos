@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/public-agent-mcp.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // MCP tools for PUBLIC (customer-facing) agents.
 //

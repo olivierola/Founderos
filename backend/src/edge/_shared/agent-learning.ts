@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/agent-learning.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Agent self-learning — turn a user's correction into a durable fix of the
 // file that should have prevented the mistake (migration 0288).

@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/llm-pricing.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Approx pricing per 1M tokens, in EUR cents. Updated 2026-Q1 public pricing.
 // Used as a best-effort estimate for LLM cost tracking.

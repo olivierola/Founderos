@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/admin-action-approve/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno, FUNCTIONS_URL, defineHandler } from "../../compat/index.ts";
 
 // admin-action-approve — approve+execute or reject a pending admin_action.

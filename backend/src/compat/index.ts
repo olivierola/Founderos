@@ -1,6 +1,7 @@
-// Compatibilité Deno → Node pour le code généré dans src/edge/.
+// Compatibilité Deno → Node pour le code de src/edge/.
 //
-// Les edge functions y sont copiées presque telles quelles (scripts/port-edge.mjs).
+// Les anciennes edge functions y vivent presque telles quelles (portées une fois
+// depuis supabase/functions/, maintenues ici depuis).
 // Ce module fournit les seules API du runtime Supabase qu'elles utilisent :
 // Deno.env, Deno.resolveDns, Deno.connectTls, EdgeRuntime.waitUntil, et la
 // signature `(req: Request) => Response` de Deno.serve.

@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/team-handoff.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // La passation entre coéquipiers — le maillon qui manquait au travail de groupe.
 //

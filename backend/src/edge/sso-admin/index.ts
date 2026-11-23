@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/sso-admin/index.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno, defineHandler } from "../../compat/index.ts";
 
 // sso-admin — enregistre les fournisseurs SSO de l'instance dans Supabase Auth.

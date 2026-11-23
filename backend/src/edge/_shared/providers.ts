@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/providers.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Provider validation: hits each provider's API (or pings its webhook) with the
 // supplied credentials and returns a small metadata object.

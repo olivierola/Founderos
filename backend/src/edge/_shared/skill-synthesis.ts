@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/skill-synthesis.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // skill-synthesis — transforme une DÉMONSTRATION en skill réutilisable.
 //

@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/pool-discovery.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Ce qu'un agent en mode pools voit de ses pools (0291) : l'inventaire, et le
 // geste qui sert chaque ressource.

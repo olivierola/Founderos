@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/credentials.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Helper: fetch and decrypt a connector credential by (workspace_id, project_id, provider).
 // Returns the parsed JSON payload of fields (e.g. { secret_key: "rk_live_..." } for Stripe).

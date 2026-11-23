@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/sentinel.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // SentinelFlow — le triage SOC : toutes les sources d'alertes, un seul format,
 // un tri Jev, des faux positifs prouvés, et jamais de remédiation sans humain.

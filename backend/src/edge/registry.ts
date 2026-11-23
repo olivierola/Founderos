@@ -1,4 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs — ne pas modifier à la main.
 
 import type { EdgeHandler } from "../compat/index.ts";
 
@@ -50,7 +49,6 @@ export const edgeFunctions: Record<string, () => Promise<EdgeModule>> = {
   "ingest-session-replay": () => import("./ingest-session-replay/index.ts"),
   "internal-agent-a2a": () => import("./internal-agent-a2a/index.ts"),
   "internal-agent-approve": () => import("./internal-agent-approve/index.ts"),
-  "internal-agent-run": () => import("./internal-agent-run/index.ts"),
   "internal-agent-scheduler": () => import("./internal-agent-scheduler/index.ts"),
   "invite-member": () => import("./invite-member/index.ts"),
   "machines": () => import("./machines/index.ts"),

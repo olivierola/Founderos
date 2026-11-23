@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/mcp-headers.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // En-têtes statiques d'un serveur MCP (migration 0280).
 //

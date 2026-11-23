@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/governance-incidents.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Best-effort auto-incident recording from the agent runtime into the governance
 // register (gov_incidents). The runtime is the only writer here — RLS is bypassed

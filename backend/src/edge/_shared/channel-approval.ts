@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/channel-approval.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 import { Deno, FUNCTIONS_URL } from "../../compat/index.ts";
 
 // Les demandes d'autorisation d'un agent, dans Slack et Teams.

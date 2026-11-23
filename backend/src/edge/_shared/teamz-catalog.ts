@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/teamz-catalog.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Le catalogue des Teamz — des équipes complètes, chacune pour un métier que
 // la plateforme sait vraiment faire aujourd'hui.

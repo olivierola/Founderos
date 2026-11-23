@@ -29,7 +29,6 @@ dans le `.env` racine envoie toutes les fonctions vers ce backend.
 | `npm run typecheck` | vérification TypeScript, code généré compris                 |
 | `npm run build`     | compile vers `dist/`                                         |
 | `npm start`         | lance `dist/index.js` (production)                           |
-| `npm run port:edge` | régénère `src/edge/` depuis `supabase/functions/`            |
 | `npm run dev:self`  | serveur en plateforme auto-hébergée (`.env.self`)            |
 | `npm run platform`  | `keys`, `migrate`, `import` (plateforme auto-hébergée)       |
 
@@ -50,25 +49,22 @@ src/
   compat/               exécution du code edge sous Node
     index.ts            objet Deno (env, DNS, TLS), EdgeRuntime.waitUntil
     express.ts          adaptateur Request/Response web ↔ Express
-  edge/                 GÉNÉRÉ — copie des edge functions, ne pas modifier
+  edge/                 les edge functions, servies par ce backend (la source)
     registry.ts         liste des fonctions + exceptions verify_jwt
-scripts/
-  port-edge.mjs         le générateur de src/edge/
+  harness/              le moteur des agents : OpenCode embarqué (runs, pont, cycle de vie)
+  agents/               ce que le moteur assemble pour un agent (outils, prompt, fin de run)
 ```
 
 ### Deux sortes de fonctions
 
-- **Générées** (`src/edge/`, 96 fonctions) : le code des edge functions, copié
-  par `scripts/port-edge.mjs`. Seules les parties propres à Supabase sont
-  réécrites — imports `esm.sh` → npm, `Deno.serve` → export, URL internes →
-  `FUNCTIONS_URL`. Le reste est identique à la source, ce qui garantit le même
-  comportement. Pour corriger l'une d'elles : modifier `supabase/functions/`,
-  puis `npm run port:edge`.
+- **Edge** (`src/edge/`) : le code des anciennes edge functions, porté une fois
+  depuis `supabase/functions/` puis maintenu ICI : le backend est la source
+  (docs/harness-opencode/04). `supabase/functions/` est gelé, c'est la version
+  de l'ancien cloud. Les API propres au runtime Supabase passent par `src/compat/`.
 - **Réécrites** (`src/functions/`, `src/ws/`) : du code Express ou Node natif.
-  Le générateur ignore toute fonction qui a un fichier ici.
 
-Tant que les edge functions restent déployées, `npm run port:edge` après chaque
-changement dans `supabase/functions/` garde les deux versions identiques.
+Le moteur des agents (`internal-agent-run`) n'est plus une edge function : c'est
+le harnais OpenCode (`src/harness/`), servi à la même URL par `harness/route.ts`.
 
 ### Réglages de l'installation (G4)
 
@@ -102,7 +98,7 @@ personne n'administre encore), son owner la revendique depuis l'écran.
    - `return jsonResponse({ error }, { status })` → `throw new HttpError(status, error)` ;
    - les gardes de `_shared/authz.ts` → ceux de `src/shared/authz.ts`.
 2. L'enregistrer dans `src/functions/index.ts`.
-3. `npm run port:edge` : la copie générée disparaît.
+3. Retirer `src/edge/<nom>/` et son entrée de `src/edge/registry.ts`.
 
 Garder les gardes d'accès : avec la clé service role, RLS ne protège plus rien,
 toute route qui reçoit un id de workspace, de projet ou de ressource appelle

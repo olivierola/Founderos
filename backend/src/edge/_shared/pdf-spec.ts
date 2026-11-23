@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/pdf-spec.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // PDF specs written by agents (the `generate_pdf` tool).
 //

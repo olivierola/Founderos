@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/aws-sigv4.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Minimal AWS Signature V4 signer for service REST calls (Athena, S3) from Deno.
 // Pure Web Crypto, no SDK. Supports the common "POST JSON to a service endpoint"

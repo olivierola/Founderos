@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/llm-tracking.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Helper: log LLM token usage + estimated cost into llm_usage.
 // Best-effort — failures must never break the AI call itself.

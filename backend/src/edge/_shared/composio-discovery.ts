@@ -1,5 +1,3 @@
-// GÉNÉRÉ par backend/scripts/port-edge.mjs depuis supabase/functions/_shared/composio-discovery.ts.
-// Ne pas modifier à la main : corriger la source puis relancer `npm run port:edge`.
 
 // Les actions d'une app Composio, découvertes et gardées en cache dans
 // connectors.metadata.tools. C'est là que le registre des ressources (0291)
