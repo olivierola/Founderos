@@ -8,6 +8,7 @@
 //   .env.example     FOUNDEROS_URL et FOUNDEROS_API_KEY (et la clé du modèle en
 //                    accès direct) : les secrets restent hors de l'image
 //   manifest.json    la configuration figée (sans secret)
+//   knowledge.jsonl  la connaissance embarquée (vide si l'option est coupée)
 //   workspace/       les fichiers d'amorce de son dossier de travail
 //   README.md        comment construire, lancer, superviser
 
@@ -43,10 +44,11 @@ export function dockerfile(manifest: EmbeddedManifest, config: EmbeddedConfig): 
     ...(m.pip.length ? [`RUN pip3 install --no-cache-dir --break-system-packages ${shellList(m.pip)}`] : []),
     ...(m.npm.length ? [`RUN npm install -g ${shellList(m.npm)}`] : []),
     "COPY manifest.json /app/manifest.json",
+    "COPY knowledge.jsonl /app/knowledge.jsonl",
     "COPY workspace/ /workspace/",
     "RUN chown -R agent:agent /workspace /data",
     "USER agent",
-    "ENV MANIFEST=/app/manifest.json WORKSPACE_DIR=/workspace DATA_DIR=/data",
+    "ENV MANIFEST=/app/manifest.json KNOWLEDGE=/app/knowledge.jsonl WORKSPACE_DIR=/workspace DATA_DIR=/data",
     "VOLUME [\"/data\", \"/workspace\"]",
     "",
   ].join("\n");
@@ -133,6 +135,8 @@ export function readme(manifest: EmbeddedManifest, version: number, sha: string)
 /** L'archive à télécharger : la machine de l'agent, prête à construire. */
 export async function makeBundle(input: {
   manifest: EmbeddedManifest; sha: string; version: number; config: EmbeddedConfig; founderosUrl: string;
+  /** L'instantané de la connaissance (JSON Lines), quand l'option est active. */
+  knowledge?: string;
 }): Promise<Uint8Array> {
   const { manifest, sha, version, config } = input;
   const root = `${slugOf(manifest.agent.name)}-v${version}`;
@@ -142,6 +146,7 @@ export async function makeBundle(input: {
   await add("compose.yaml", composeFile(manifest, version));
   await add(".env.example", envExample(manifest, input.founderosUrl));
   await add("manifest.json", JSON.stringify({ ...manifest, version, sha }, null, 2));
+  await add("knowledge.jsonl", input.knowledge ?? "");
   await add("README.md", readme(manifest, version, sha));
   await add("workspace/.keep", "");
   for (const f of config.seed_files) {

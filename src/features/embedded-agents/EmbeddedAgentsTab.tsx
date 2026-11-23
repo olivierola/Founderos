@@ -259,10 +259,10 @@ function AgentPanel({ agent, data, dashboardId, base }: { agent: EmbeddedAgent; 
             value={draft.connectivity} onChange={(v) => set("connectivity", v)}
             options={[
               ["connected", "Connecté", "Tout en direct."],
-              ["intermittent", "Intermittent", "Réseau instable : le travail attend le retour de la liaison."],
+              ["intermittent", "Intermittent", "Réseau instable : ses écritures attendent le retour de la liaison, sa recherche passe sur la connaissance embarquée."],
               ["isolated", "Isolé", "Outils locaux et connaissance embarquée seulement."],
             ]}
-            soon={["intermittent", "isolated"]}
+            soon={["isolated"]}
           />
         </Field>
         <Field label="Ce qui remonte des conversations">
@@ -275,7 +275,7 @@ function AgentPanel({ agent, data, dashboardId, base }: { agent: EmbeddedAgent; 
             ]}
           />
         </Field>
-        <Toggle label="Connaissance embarquée" desc="Les collections de ses pools copiées dans l'image, pour chercher même sans réseau." checked={false} onChange={(v) => set("knowledge_snapshot", v)} icon={DatabaseIcon} soon />
+        <Toggle label="Connaissance embarquée" desc="Ses documents et ses mémoires copiés dans l'image et rafraîchis au démarrage, pour chercher même sans réseau." checked={draft.knowledge_snapshot} onChange={(v) => set("knowledge_snapshot", v)} icon={DatabaseIcon} />
         <Field label="Sorties réseau permises (en plus de FounderOS et du modèle)"><Input value={lists.egress} onChange={(e) => setLists({ ...lists, egress: e.target.value })} placeholder="ex. erp.client.local api.github.com" /></Field>
       </Card>
 
@@ -315,7 +315,7 @@ function AgentPanel({ agent, data, dashboardId, base }: { agent: EmbeddedAgent; 
                   {b.status === "built" ? "image construite" : b.status === "failed" ? "échec" : b.status === "building" ? "construction…" : "exportée"}
                 </span>
                 <span className="ml-auto text-[12px] text-muted-foreground">{formatRelative(b.created_at)}</span>
-                {b.status === "failed" && b.log && <p className="w-full truncate font-mono text-[11px] text-destructive" title={b.log}>{b.log}</p>}
+                {b.log && <p className={cn("w-full truncate font-mono text-[11px]", b.status === "failed" ? "text-destructive" : "text-muted-foreground")} title={b.log}>{b.log}</p>}
               </div>
             ))}
           </div>
@@ -461,7 +461,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-/** `soon` : des choix prévus (plan 05, phase E4) que le moteur n'applique pas encore. */
+/** `soon` : un choix prévu que le moteur n'applique pas encore. */
 function Choice<T extends string>({ value, onChange, options, soon = [] }: { value: T; onChange: (v: T) => void; options: Array<[T, string, string]>; soon?: T[] }) {
   return (
     <div className={cn("grid gap-2", options.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2")}>

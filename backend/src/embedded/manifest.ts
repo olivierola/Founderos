@@ -61,7 +61,7 @@ export const CONFIG_COLUMNS =
   "knowledge_snapshot, cpus, memory_mb, disk_mb, egress, apt_packages, pip_packages, npm_packages, seed_files, shell_enabled, runtime_version";
 
 /** Les outils qui ne passent pas la passerelle : la machine d'équipe (le conteneur est sa machine). */
-export const LOCAL_ONLY = /^team_/;
+export const LOCAL_ONLY = /^team_(shell|files|folders|jobs|install|browser)$/;
 
 const AGENT_FIELDS = [
   "id", "name", "persona", "instructions", "soul", "preferences", "autonomy_level", "collaboration_enabled",

@@ -22,8 +22,12 @@ Un agent embarqué est la **troisième sorte d'agent**, à côté des collaborat
 
 **La conduite des runs reste celle de la plateforme** (`/embedded/v1/runs`) : après chaque étape le contrôleur de boucle, au plafond le budget, à la fin le cycle de vie (`lifecycle.ts` : contrat et preuves, livrables, conversation et canaux, salle, mission, workflow, retour au collègue), et les questions. La passerelle rend les gestes à faire dans la session du conteneur (consigne glissée, relance, modèle lourd, interruption). Les liaisons d'un run (salle, mission, workflow) sont lues en base, jamais reçues du conteneur. Hors du niveau « Tout », ni contrat relu sur la réponse, ni initiatives, ni graphe de connaissances : le contenu reste sur l'instance. Salles, workflows et échanges entre agents sont ouverts aux agents embarqués.
 
+**La connaissance embarquée** (`backend/src/embedded/knowledge.ts`) : ce que l'agent peut lire en ligne (ses documents dans les collections de ses pools, sa mémoire, celle de l'équipe ; seulement les types qu'il lit déjà), figé dans `knowledge.jsonl` à l'export (20 000 passages, 40 Mo au plus) et rafraîchi au démarrage et au rechargement. Le conteneur cherche en ligne par la passerelle et bascule sur l'instantané quand FounderOS ne répond pas, avec la même sémantique que `search_grep` (test de parité dans l'e2e).
+
+**La connexion intermittente** : quand FounderOS ne répond pas, les écritures du pont (événements, statut, messages, consommation) attendent dans `/data/journal.jsonl`, dans l'ordre, et sont rejouées au retour de la liaison ; un run qui finit hors ligne est clos par le conteneur (sans contrat ni canaux), avec une note dans sa timeline. Les outils de la plateforme échouent proprement ; le modèle doit être en accès direct pour travailler hors ligne. Au démarrage, l'instance attend FounderOS au lieu de s'arrêter.
+
 **Limites connues :**
-- La connaissance embarquée (instantané des collections) est réglable, mais l'instantané n'est pas encore copié dans l'image : la recherche passe par la passerelle.
+- Le mode **isolé** reste à concevoir : sans aucune liaison, l'agent ne reçoit pas d'ordres ; il faut une entrée locale (une interface ou une API sur le site) et l'import de son journal dans FounderOS. Il est affiché « bientôt ».
 - Le moteur (`founderos/agent-runtime`) se construit depuis le dépôt ; il n'est pas encore publié sur un registre.
 
 ## 1. Pourquoi c'est faisable maintenant

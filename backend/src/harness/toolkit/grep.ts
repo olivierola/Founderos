@@ -140,6 +140,10 @@ export function foldPattern(p: string): string {
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const WORD_START_JS = "(?<![\\p{L}\\p{N}])";
 
+/** Une expression de search_grep (PostgreSQL) en JavaScript : \m, \M et \y n'y existent pas. */
+export const pgRegexToJs = (pg: string) =>
+  pg.replace(/\\m/g, WORD_START_JS).replace(/\\M/g, "(?![\\p{L}\\p{N}])").replace(/\\y/g, "\\b");
+
 export type GrepMode = "any" | "all" | "phrase" | "regex";
 
 export interface Patterns {
@@ -159,7 +163,7 @@ export function buildPatterns(pattern: string, mode: GrepMode): Patterns | strin
   if (!p) return "pattern est vide.";
   if (mode === "regex") {
     const pg = foldPattern(p);
-    const jsSource = pg.replace(/\\m/g, WORD_START_JS).replace(/\\M/g, "(?![\\p{L}\\p{N}])").replace(/\\y/g, "\\b");
+    const jsSource = pgRegexToJs(pg);
     let js: RegExp[] = [];
     try { js = [new RegExp(jsSource, "u")]; } catch (e) {
       // PostgreSQL connaît quelques constructions de plus : on le laisse juger.

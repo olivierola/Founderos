@@ -109,6 +109,8 @@ export class FounderOS {
       (await this.request<{ rows: Array<Record<string, unknown>> }>("POST", "/search/grep", p)).rows,
     read: async (ids: string[], whole: boolean) =>
       (await this.request<{ rows: Array<Record<string, unknown>> }>("POST", "/search/read", { ids, whole })).rows,
+    /** La connaissance embarquée à jour (JSON Lines), si l'option est active. */
+    snapshot: () => this.request<{ enabled: boolean; jsonl: string; count: number; truncated: boolean }>("GET", "/knowledge/snapshot", undefined, 10 * 60_000),
   };
 
   /** Les écritures du moteur (runs, événements, messages, consommation). */

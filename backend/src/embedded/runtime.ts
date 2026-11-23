@@ -17,10 +17,16 @@
 // canaux, mission, salle, workflow), questions ; elle rend les gestes que ce
 // conteneur applique à sa session.
 //
+// Connexion intermittente : quand FounderOS ne répond pas, les écritures du
+// pont attendent dans un journal (/data/journal.jsonl) rejoué au retour de la
+// liaison, la recherche passe sur la connaissance embarquée, et un run qui finit
+// hors ligne est clos ici (sans le cycle de vie de la plateforme).
+//
 // Variables : FOUNDEROS_URL, FOUNDEROS_API_KEY, INSTANCE_NAME, MANIFEST,
-// DATA_DIR (/data), WORKSPACE_DIR (/workspace), LLM_API_KEY (accès direct).
+// KNOWLEDGE (/app/knowledge.jsonl), DATA_DIR (/data), WORKSPACE_DIR
+// (/workspace), LLM_API_KEY (accès direct).
 
-import { readFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -31,7 +37,8 @@ process.env.SUPABASE_ANON_KEY ||= "embedded";
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= "embedded";
 process.env.PLATFORM = "supabase";
 
-const { FounderOS } = await import("./sdk.ts");
+const { FounderOS, FounderOSError } = await import("./sdk.ts");
+const { fromJsonl, localIndex } = await import("./knowledge.ts");
 const { createHarness } = await import("../harness/host.ts");
 const { agentPlugin, newAgentState } = await import("../harness/agent-plugin.ts");
 const { modelForRoute } = await import("../harness/agent-profile.ts");
@@ -44,6 +51,8 @@ type HarnessStore = import("../harness/store.ts").HarnessStore;
 type BoundRun = import("../harness/store.ts").BoundRun;
 type TrailEntry = import("../harness/bridge.ts").TrailEntry;
 type RunAction = import("./sdk.ts").RunAction;
+type SearchIndex = import("../harness/toolkit/grep.ts").SearchIndex;
+type RunOutcome = import("../harness/bridge.ts").RunOutcome;
 type Kit = import("../harness/toolkit/plugin.ts").Kit;
 
 const log = (msg: string) => console.log(`[agent] ${new Date().toISOString()} ${msg}`);
@@ -65,12 +74,29 @@ interface Manifest {
   llm: { route: "founderos" | "direct"; base_url: string | null; model: string | null; openrouter: boolean };
   machine: { shell: boolean };
   skills: Kit["skills"];
+  connectivity?: "connected" | "intermittent" | "isolated";
+  knowledge?: { snapshot: boolean };
 }
 
-const hello = await fos.hello({
-  name: instanceName, version: Number(built?.version) || null, manifest_sha: (built?.sha as string | undefined) ?? null,
-  info: { node: process.version, platform: `${os.platform()} ${os.arch()}`, built: !!built },
-});
+/** FounderOS ne répond pas (réseau, passerelle) : à distinguer d'un refus, qui ne se rejoue pas. */
+const unreachable = (e: unknown) => !(e instanceof FounderOSError) || e.status >= 502;
+const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+await mkdir(dataDir, { recursive: true }).catch(() => {});
+// FounderOS peut ne pas répondre au démarrage (réseau, mise à jour) : on réessaie.
+let hello: Awaited<ReturnType<typeof fos.hello>> | null = null;
+for (let wait = 5_000; !hello; wait = Math.min(wait * 2, 120_000)) {
+  try {
+    hello = await fos.hello({
+      name: instanceName, version: Number(built?.version) || null, manifest_sha: (built?.sha as string | undefined) ?? null,
+      info: { node: process.version, platform: `${os.platform()} ${os.arch()}`, built: !!built },
+    });
+  } catch (e) {
+    if (!unreachable(e)) throw e;
+    log(`FounderOS ne répond pas (${errText(e)}) : nouvel essai dans ${Math.round(wait / 1000)} s`);
+    await new Promise((r) => setTimeout(r, wait));
+  }
+}
 const instanceId = hello.instance_id;
 const agentId = hello.agent_id;
 let manifest = hello.manifest as unknown as Manifest;
@@ -93,7 +119,76 @@ function profileOf(m: Manifest): AgentProfile {
 }
 
 // ── Le magasin : les écritures du pont passent par la passerelle ──
-const remote = <T>(op: string) => (...args: unknown[]) => fos.store<T>(op, args, instanceId);
+// En connexion intermittente, une écriture qui ne passe pas attend dans le journal, dans l'ordre.
+const WRITES = new Set(["setConversationSession", "insertEvent", "updateRun", "insertAssistantMessage", "touchConversation", "logUsage"]);
+const journalFile = path.join(dataDir, "journal.jsonl");
+const journal: Array<{ op: string; args: unknown[] }> = fromJsonl(await readFile(journalFile, "utf8").catch(() => "")) as never;
+const intermittent = () => manifest.connectivity === "intermittent";
+const saveJournal = () => writeFile(journalFile, journal.map((j) => JSON.stringify(j)).join("\n") + (journal.length ? "\n" : "")).catch(() => {});
+const toJournal = async (op: string, args: unknown[]) => {
+  journal.push({ op, args });
+  await appendFile(journalFile, JSON.stringify({ op, args }) + "\n").catch(() => {});
+};
+const remote = <T>(op: string) => async (...args: unknown[]): Promise<T> => {
+  // Le journal n'est pas vide : une écriture passe derrière les précédentes.
+  if (WRITES.has(op) && journal.length) { await toJournal(op, args); return null as T; }
+  try {
+    return await fos.store<T>(op, args, instanceId);
+  } catch (e) {
+    if (!(intermittent() && WRITES.has(op) && unreachable(e))) throw e;
+    await toJournal(op, args);
+    return null as T;
+  }
+};
+/** Rejoue le journal tant que FounderOS répond ; une écriture refusée (4xx) est abandonnée. */
+async function flushJournal() {
+  let sent = 0;
+  while (journal.length) {
+    const j = journal[0];
+    try {
+      await fos.store(j.op, j.args, instanceId);
+    } catch (e) {
+      if (unreachable(e)) break;
+      log(`journal : écriture ${j.op} refusée (${errText(e)}), abandonnée`);
+    }
+    journal.shift();
+    sent++;
+  }
+  if (sent) {
+    await saveJournal();
+    log(`journal : ${sent} écriture(s) rejouée(s)${journal.length ? `, ${journal.length} en attente` : ""}`);
+  }
+}
+
+// ── La connaissance embarquée : la recherche quand FounderOS ne répond pas ──
+const knowledgeFile = path.join(dataDir, "knowledge.jsonl");
+let localKnowledge: SearchIndex | null = null;
+async function loadKnowledge() {
+  const text = await readFile(knowledgeFile, "utf8").catch(() => readFile(env("KNOWLEDGE", "/app/knowledge.jsonl"), "utf8")).catch(() => "");
+  const rows = fromJsonl(text);
+  localKnowledge = rows.length ? localIndex(rows) : null;
+  if (rows.length) log(`connaissance embarquée : ${rows.length} passages`);
+}
+async function refreshKnowledge() {
+  if (manifest.knowledge?.snapshot) {
+    try {
+      const snap = await fos.knowledge.snapshot();
+      if (snap.enabled) {
+        await writeFile(knowledgeFile, snap.jsonl);
+        if (snap.truncated) log("connaissance embarquée tronquée à la limite de taille");
+      }
+    } catch (e) { log(`connaissance embarquée non rafraîchie : ${errText(e)}`); }
+  }
+  await loadKnowledge();
+}
+/** En ligne, l'index de la plateforme ; hors ligne, l'instantané. */
+const searchVia = <A extends unknown[], R>(online: (...a: A) => Promise<R>, offline: (k: SearchIndex, ...a: A) => Promise<R>) =>
+  async (...a: A): Promise<R> => {
+    try { return await online(...a); } catch (e) {
+      if (localKnowledge && unreachable(e)) return offline(localKnowledge, ...a);
+      throw e;
+    }
+  };
 const store: HarnessStore = {
   agent: remote("agent"),
   hasAgentAccess: async () => false,
@@ -129,7 +224,10 @@ const kit = async (): Promise<Kit> => {
         return fos.tools.call(name, args, { run_id: run?.runId ?? null, conversation_id: run?.conversationId ?? null });
       },
     },
-    search: { grep: (p) => fos.knowledge.grep(p) as never, read: (ids, whole) => fos.knowledge.read(ids, whole) as never },
+    search: {
+      grep: searchVia((p: Parameters<SearchIndex["grep"]>[0]) => fos.knowledge.grep(p) as never, (k, p) => k.grep(p)),
+      read: searchVia((ids: string[], whole: boolean) => fos.knowledge.read(ids, whole) as never, (k, ids, whole) => k.read(ids, whole)),
+    },
   };
 };
 // Le conteneur est la machine de l'agent : son shell est permis, rien hors du dossier de travail.
@@ -175,13 +273,43 @@ const bridge = startBridge(harness.opencode, store, {
   },
   overBudget: (run) => fos.runs.budget(refOf(run)),
   settle: async (run, outcome) => {
-    const { next, actions } = await fos.runs.settle(refOf(run), { ...outcome, trail: compact(outcome.trail) });
-    await apply(run, actions);
-    return next;
+    try {
+      const { next, actions } = await fos.runs.settle(refOf(run), { ...outcome, trail: compact(outcome.trail) });
+      await apply(run, actions);
+      return next;
+    } catch (e) {
+      if (!(intermittent() && unreachable(e))) throw e;
+      await finishOffline(run, outcome);
+      return "done";
+    }
   },
   question: async (run, q) => { await fos.runs.question(refOf(run), q as unknown as Record<string, unknown>); },
 });
 bridgeRef = bridge;
+
+/** Un run qui finit hors ligne : clos ici, ses écritures au journal ; la plateforme le saura au retour. */
+async function finishOffline(run: BoundRun, outcome: RunOutcome) {
+  const now = new Date().toISOString();
+  if (outcome.status === "succeeded") {
+    if (run.conversationId) {
+      await store.insertAssistantMessage({
+        conversationId: run.conversationId, agentId: run.agentId, runId: run.runId, content: outcome.text,
+        tokensIn: outcome.tokensIn, tokensOut: outcome.tokensOut, costUsd: outcome.costUsd,
+      });
+      await store.touchConversation(run.conversationId);
+    }
+    await store.updateRun(run.runId, {
+      status: "succeeded", finished_at: now, final_output: outcome.text.slice(0, 2000), live_output: null,
+      action_count: outcome.toolCalls, steps: outcome.toolCalls,
+    });
+  } else {
+    await store.updateRun(run.runId, { status: outcome.status, finished_at: now, error_message: outcome.text.slice(0, 500), live_output: null });
+  }
+  await store.insertEvent(run.runId, run.agentId, "status", {
+    message: "Fini hors ligne : la fin du run (contrat, canaux, mission) n'a pas pu passer par FounderOS.",
+  });
+  log(`run ${run.runId} clos hors ligne`);
+}
 const agents = {
   state,
   load: async () => profileOf(manifest),
@@ -232,6 +360,7 @@ async function handle(cmd: { id: number; command: string; payload: Record<string
       manifest = next.manifest as unknown as Manifest;
       manifestSha = next.sha;
       await state.controls.get(agentId)?.refresh();
+      await refreshKnowledge();
       log(`configuration rechargée (${manifestSha.slice(0, 12)})`);
       return;
     }
@@ -250,6 +379,7 @@ async function loop() {
   let lastBeat = 0;
   while (!stopping) {
     if (Date.now() - lastBeat > 15_000) { lastBeat = Date.now(); await beat(); }
+    if (journal.length) await flushJournal();
     try {
       const { command } = await fos.commands.take(instanceId);
       // En pause, seuls la reprise, le rechargement et l'arrêt passent ; un tour attend.
@@ -274,6 +404,7 @@ const shutdown = async () => {
 process.on("SIGTERM", () => void shutdown());
 process.on("SIGINT", () => void shutdown());
 
+await refreshKnowledge();
 await beat();
 await loop();
 await shutdown();

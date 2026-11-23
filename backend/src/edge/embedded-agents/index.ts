@@ -23,6 +23,7 @@ import { env } from "../../env.ts";
 import { makeBundle, imageTag, slugOf } from "../../embedded/bundle.ts";
 import { newKey } from "../../embedded/keys.ts";
 import { compileManifest, CONFIG_COLUMNS, type EmbeddedConfig } from "../../embedded/manifest.ts";
+import { snapshotFor, toJsonl } from "../../embedded/knowledge.ts";
 import { embeddedDocker } from "../../platform/embedded-docker.ts";
 
 type Body = Record<string, unknown> & { action?: string };
@@ -58,12 +59,15 @@ export default defineHandler(async (req) => {
   const exportVersion = async (agentId: string, userId: string | null) => {
     const { manifest, sha, config } = await compileManifest(admin, agentId);
     const version = await nextVersion(agentId);
+    // La connaissance embarquée : ce que l'agent peut lire, figé dans l'image.
+    const snap = config.knowledge_snapshot ? await snapshotFor(admin, manifest) : null;
     const { data: build, error } = await admin.from("embedded_agent_builds").insert({
       agent_id: agentId, workspace_id: config.workspace_id, version, manifest, manifest_sha: sha, status: "exported",
       image_ref: imageTag(manifest, version), created_by: userId,
+      log: snap ? `connaissance embarquée : ${snap.rows.length} passages${snap.truncated ? " (tronquée à la limite)" : ""}` : null,
     }).select("id, version, manifest_sha, status, image_ref, created_at").single();
     if (error) throw new Error(error.message);
-    const bundle = await makeBundle({ manifest, sha, version, config, founderosUrl: founderosUrl() });
+    const bundle = await makeBundle({ manifest, sha, version, config, founderosUrl: founderosUrl(), knowledge: snap ? toJsonl(snap.rows) : "" });
     return { build, bundle, manifest, config, version, filename: `${slugOf(manifest.agent.name)}-v${version}.zip` };
   };
 

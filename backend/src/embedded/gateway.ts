@@ -10,6 +10,7 @@
 //   POST /tools/call       en exécuter un, pour un run
 //   POST /search/grep      chercher dans la base de l'agent (grep du toolkit)
 //   POST /search/read      relire des sources
+//   GET  /knowledge/snapshot   la connaissance embarquée à jour (si l'option est active)
 //   POST /llm/chat/completions   le modèle, par la connexion de la plateforme
 //   POST /store            les écritures du pont (runs, événements, messages, consommation)
 //   POST /runs/step        après chaque étape : le contrôleur de boucle de la plateforme
@@ -41,6 +42,7 @@ import type { RunOutcome, RunQuestion, TrailEntry } from "../harness/bridge.ts";
 import { documentCollections, rpcSearchIndex, supabaseRpc } from "../harness/toolkit/grep.ts";
 import { resolveKey, type KeyOwner } from "./keys.ts";
 import { compileManifest, LOCAL_ONLY, loadConfig } from "./manifest.ts";
+import { snapshotFor, toJsonl } from "./knowledge.ts";
 
 type Admin = SupabaseClient;
 
@@ -216,6 +218,15 @@ export function embeddedGateway(): Router {
     try {
       const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
       res.json({ rows: await (await indexFor(owner(res))).read(ids, req.body?.whole === true) });
+    } catch (e) { fail(res, e); }
+  });
+
+  router.get("/knowledge/snapshot", async (_req, res) => {
+    try {
+      const { manifest } = await compileManifest(admin(), owner(res).agentId);
+      if (!manifest.knowledge.snapshot) return res.json({ enabled: false, jsonl: "", count: 0, truncated: false });
+      const snap = await snapshotFor(admin(), manifest);
+      res.json({ enabled: true, jsonl: toJsonl(snap.rows), count: snap.rows.length, truncated: snap.truncated });
     } catch (e) { fail(res, e); }
   });
 

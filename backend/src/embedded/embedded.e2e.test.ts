@@ -115,7 +115,9 @@ describe("agents embarqués : manifeste, archive, passerelle", { skip, timeout: 
     assert.equal(a.manifest.sync_level, "full");
     assert.deepEqual(a.manifest.machine.apt, ["jq"]);
     assert.match(a.manifest.system, /commandes en retard/);
-    assert.ok(!a.manifest.tools.some((t) => /^team_/.test(t)), "les outils de team machine restent locaux");
+    const { LOCAL_ONLY } = await import("./manifest.ts");
+    assert.ok(!a.manifest.tools.some((t) => LOCAL_ONLY.test(t)), "les outils de team machine restent locaux");
+    assert.ok(LOCAL_ONLY.test("team_shell") && !LOCAL_ONLY.test("team_memory"), "la mémoire d'équipe passe la passerelle");
     assert.doesNotMatch(JSON.stringify(a.manifest), /fos_emb_|key_hash|service_role/i);
 
     const again = await compileManifest(admin, id.agent);
@@ -158,7 +160,7 @@ describe("agents embarqués : manifeste, archive, passerelle", { skip, timeout: 
     for (const e of await reader.getEntries()) if (!e.directory && e.getData) files[e.filename] = await e.getData(new TextWriter());
     await reader.close();
     const root = "agent-erp-lyon-v3";
-    for (const f of ["Dockerfile", "compose.yaml", ".env.example", "manifest.json", "README.md", "workspace/config/erp.yaml"]) {
+    for (const f of ["Dockerfile", "compose.yaml", ".env.example", "manifest.json", "knowledge.jsonl", "README.md", "workspace/config/erp.yaml"]) {
       assert.ok(`${root}/${f}` in files, `${f} manque : ${Object.keys(files).join(", ")}`);
     }
     assert.ok(!Object.keys(files).some((f) => f.includes("evasion")), "un chemin qui sort de /workspace est écarté");
@@ -326,6 +328,56 @@ describe("agents embarqués : manifeste, archive, passerelle", { skip, timeout: 
     const run = await one<{ status: string; final_output: string | null }>("select status, final_output from public.internal_agent_runs where id = $1", [chatRun]);
     assert.equal(run!.status, "succeeded");
     assert.doesNotMatch(String(run!.final_output ?? ""), /Durand/);
+  });
+
+  it("la connaissance embarquée : ce que l'agent lit en ligne, cherché de la même façon hors ligne", async () => {
+    const { knowledgeSnapshot, localIndex } = await import("./knowledge.ts");
+    const { buildPatterns } = await import("../harness/toolkit/grep.ts");
+    const collA = "11111111-1111-4111-8111-111111111111";
+    const collB = "22222222-2222-4222-8222-222222222222";
+    const otherProject = (await one<{ id: string }>("insert into public.projects (workspace_id, name, slug) values ($1, 'Autre', 'autre-emb') returning id", [id.ws]))!.id;
+    const put = (type: string, content: string, o: { project?: string | null; agent?: string | null; coll?: string; title?: string; at?: string } = {}) =>
+      platform.db.command(
+        `insert into public.search_index (workspace_id, project_id, agent_id, type, source_table, source_id, grp, path, title, content, meta, updated_at)
+         values ($1, $2, $3, $4, 'e2e', gen_random_uuid(), gen_random_uuid()::text, $4 || '/e2e', $5, $6, $7::jsonb, coalesce($8::timestamptz, now()))`,
+        [id.ws, o.project === undefined ? id.project : o.project, o.agent ?? null, type, o.title ?? null, content,
+          JSON.stringify(o.coll ? { collection_id: o.coll } : {}), o.at ?? null]);
+    await put("documents", "Procédure de facturation : la facture part le 5.", { coll: collA, title: "Facturation", at: "2026-11-01" });
+    await put("documents", "Les avoirs suivent la facture initiale.", { coll: collA, at: "2026-11-02" });
+    await put("documents", "Facture confidentielle d'une autre équipe.", { coll: collB });
+    await put("documents", "Facture d'un autre projet.", { coll: collA, project: otherProject });
+    await put("memory", "Durand veut ses factures en papier.", { agent: id.agent });
+    await put("memory", "Mémoire d'un autre agent sur les factures.", { agent: id.other });
+
+    const scope = { workspaceId: id.ws, projectId: id.project, agentId: id.agent, collections: [collA] };
+    const snap = await knowledgeSnapshot(admin, { ...scope, tools: ["search_knowledge", "search_memory"] });
+    const contents = snap.rows.map((r) => r.content).join(" | ");
+    assert.equal(snap.rows.length, 3, contents);
+    assert.doesNotMatch(contents, /confidentielle|autre projet|autre agent/);
+    const none = await knowledgeSnapshot(admin, { ...scope, tools: [] });
+    assert.equal(none.rows.length, 0, "un agent sans outil de recherche n'embarque rien");
+
+    // Hors ligne comme en ligne : mêmes lignes, même ordre, mêmes scores.
+    const local = localIndex(snap.rows);
+    for (const [pattern, mode] of [["factur", "any"], ["facture avoirs", "all"], ["facture avoirs", "any"], ["papier", "any"]] as const) {
+      const p = buildPatterns(pattern, mode);
+      if (typeof p === "string") throw new Error(p);
+      const args = { types: ["documents", "memory"], regexes: p.regexes, all: p.all, path: null, limit: 50, offset: 0 };
+      const { data, error } = await admin.rpc("search_grep", {
+        p_workspace: id.ws, p_project: id.project, p_agent: id.agent, p_collections: [collA],
+        p_types: args.types, p_regexes: args.regexes, p_all: args.all, p_path: null, p_limit: 50, p_offset: 0,
+      });
+      assert.equal(error, null);
+      const online = (data as Array<{ id: string; score: number }>).map((r) => `${r.id}:${r.score}`);
+      const offline = (await local.grep(args)).map((r) => `${r.id}:${r.score}`);
+      assert.deepEqual(offline, online, `${pattern} (${mode})`);
+    }
+
+    // La passerelle sert l'instantané à jour quand l'option est active.
+    await platform.db.command("update public.embedded_agent_configs set knowledge_snapshot = true where agent_id = $1", [id.agent]);
+    const served = await gw("/knowledge/snapshot");
+    assert.equal(served.status, 200, JSON.stringify(served.json));
+    assert.equal(served.json!.enabled, true);
   });
 
   it("une clé révoquée ne sert plus", async () => {
