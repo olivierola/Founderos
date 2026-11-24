@@ -44,7 +44,37 @@ export interface Tool {
   npm: string[];
   /** Une précaution à montrer (usage autorisé, image lourde…). */
   note?: string;
+  /**
+   * Avant l'installation apt : ajouter le dépôt d'un éditeur (paquet absent de
+   * Debian). Des commandes FIXES, écrites ici (SETUP), jamais venues d'un
+   * utilisateur ; gnupg, curl et /etc/apt/keyrings sont prêts avant elles.
+   */
+  setup?: string[];
+  /** Après les paquets : ce qui ne s'installe pas par apt, pip ou npm (une version figée). Même règle. */
+  after?: string[];
 }
+
+/** Les étapes fixes des outils qui ne sont pas dans Debian bookworm `main`. */
+const SETUP = {
+  // https://trivy.dev/docs/latest/getting-started/installation/ (dépôt apt, suite « generic »)
+  trivyRepo: [
+    "curl -fsSL https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor -o /etc/apt/keyrings/trivy.gpg",
+    "echo 'deb [signed-by=/etc/apt/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main' > /etc/apt/sources.list.d/trivy.list",
+  ],
+  // https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/ (pkgs.k8s.io, version mineure figée)
+  kubernetesRepo: [
+    "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes.gpg",
+    "echo 'deb [signed-by=/etc/apt/keyrings/kubernetes.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' > /etc/apt/sources.list.d/kubernetes.list",
+  ],
+  // nikto est dans la section non-free de Debian : on l'active (images bookworm, sources au format deb822).
+  debianNonFree: [
+    "sed -i 's/^Components: main$/Components: main non-free/' /etc/apt/sources.list.d/debian.sources",
+  ],
+  // helm : l'archive officielle d'une version figée, pour l'architecture de la machine.
+  helm: [
+    "ARCH=$(dpkg --print-architecture) && curl -fsSL https://get.helm.sh/helm-v3.16.2-linux-${ARCH}.tar.gz | tar -xz -C /tmp && install -m 0755 /tmp/linux-${ARCH}/helm /usr/local/bin/helm && rm -rf /tmp/linux-${ARCH}",
+  ],
+} as const;
 
 export const TOOLS: Tool[] = [
   // ── Développement ──
@@ -70,7 +100,7 @@ export const TOOLS: Tool[] = [
   // ── Ops et cloud ──
   { id: "ops-ansible", category: "ops", name: "Ansible", summary: "Automatiser des serveurs.", apt: [], pip: ["ansible"], npm: [] },
   { id: "ops-aws", category: "ops", name: "AWS", summary: "AWS CLI et boto3.", apt: [], pip: ["awscli", "boto3"], npm: [] },
-  { id: "ops-k8s", category: "ops", name: "Kubernetes et conteneurs", summary: "kubectl, helm, le client Docker.", apt: ["kubernetes-client", "helm", "docker.io"], pip: [], npm: [], note: "Le client seul : pas de démon dans le conteneur." },
+  { id: "ops-k8s", category: "ops", name: "Kubernetes et conteneurs", summary: "kubectl, helm, les commandes Docker.", apt: ["kubectl", "docker.io"], pip: [], npm: [], note: "Les commandes seules : aucun démon Docker ne tourne dans la machine.", setup: [...SETUP.kubernetesRepo], after: [...SETUP.helm] },
   { id: "ops-net", category: "ops", name: "Réseau et transfert", summary: "rsync, SSH, curl, wget.", apt: ["rsync", "openssh-client", "curl", "wget"], pip: [], npm: [] },
 
   // ── Documents ──
@@ -82,12 +112,12 @@ export const TOOLS: Tool[] = [
   { id: "defsec-memory", category: "defsec", name: "Analyse mémoire", summary: "Examiner une capture mémoire (Volatility 3).", apt: [], pip: ["volatility3"], npm: [] },
   { id: "defsec-capture", category: "defsec", name: "Captures réseau", summary: "Lire et filtrer des captures : tshark, tcpdump.", apt: ["tshark", "tcpdump"], pip: ["scapy"], npm: [] },
   { id: "defsec-sast", category: "defsec", name: "Audit de code", summary: "Analyse statique : Semgrep, Bandit.", apt: [], pip: ["semgrep", "bandit"], npm: [] },
-  { id: "defsec-deps", category: "defsec", name: "Audit de dépendances", summary: "Vulnérabilités connues : pip-audit, Trivy.", apt: ["trivy"], pip: ["pip-audit"], npm: [], note: "Trivy vient du dépôt apt d'Aqua Security." },
+  { id: "defsec-deps", category: "defsec", name: "Audit de dépendances", summary: "Vulnérabilités connues : pip-audit, Trivy.", apt: ["trivy"], pip: ["pip-audit"], npm: [], setup: [...SETUP.trivyRepo] },
   { id: "defsec-logs", category: "defsec", name: "Analyse de journaux", summary: "Parcourir et agréger des journaux : ripgrep, jq, Python.", apt: ["ripgrep", "jq"], pip: ["pandas", "python-dateutil"], npm: [] },
 
   // ── Audit réseau (autorisé) ──
   { id: "netsec-recon", category: "netsec", name: "Cartographie réseau", summary: "Ports, services, DNS, sous-domaines : nmap, dnsutils, whois.", apt: ["nmap", "whois", "dnsutils", "netcat-openbsd", "traceroute"], pip: ["dnspython"], npm: [], note: "À n'utiliser que sur des systèmes que vous êtes autorisé à tester." },
-  { id: "netsec-webaudit", category: "netsec", name: "Audit d'application web", summary: "Scanner de configuration et de contenu : nikto, gobuster.", apt: ["nikto", "gobuster"], pip: ["requests", "httpx"], npm: [], note: "À n'utiliser que dans le cadre d'une mission autorisée." },
+  { id: "netsec-webaudit", category: "netsec", name: "Audit d'application web", summary: "Scanner de configuration et de contenu : nikto, gobuster.", apt: ["nikto", "gobuster"], pip: ["requests", "httpx"], npm: [], note: "À n'utiliser que dans le cadre d'une mission autorisée.", setup: [...SETUP.debianNonFree] },
 
   // ── Développement (suite) ──
   { id: "dev-cpp", category: "dev", name: "C et C++", summary: "cmake, clang, gdb, valgrind.", apt: ["cmake", "clang", "gdb", "valgrind"], pip: [], npm: [] },
@@ -199,10 +229,18 @@ export function selectionLayer(ids: readonly string[]): string[] {
   const apt = tools.flatMap((t) => t.apt);
   const pip = tools.flatMap((t) => t.pip);
   const npm = tools.flatMap((t) => t.npm);
+  // Deux outils peuvent partager une étape (un même dépôt) : une fois suffit.
+  const setup = [...new Set(tools.flatMap((t) => t.setup ?? []))];
+  const after = [...new Set(tools.flatMap((t) => t.after ?? []))];
   return [
+    ...(setup.length ? [
+      "RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gnupg curl ca-certificates && install -m 0755 -d /etc/apt/keyrings",
+      ...setup.map((s) => `RUN ${s}`),
+    ] : []),
     ...(apt.length ? [`RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${list(apt)} && rm -rf /var/lib/apt/lists/*`] : []),
     ...(pip.length ? [`RUN pip3 install --no-cache-dir --break-system-packages ${list(pip)}`] : []),
     ...(npm.length ? [`RUN npm install -g --no-audit --no-fund ${list(npm)} && npm cache clean --force`] : []),
+    ...after.map((s) => `RUN ${s}`),
   ];
 }
 
@@ -216,7 +254,9 @@ export function selectionDockerfile(ids: readonly string[], baseImage: string): 
   return [
     `# Machine d'équipe avec ${resolveTools(ids).length} outil(s) du catalogue.`,
     `FROM ${baseImage}`,
-    ...(layer.length ? ["USER root", ...layer, "RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true", "USER agent"] : []),
+    // Le superviseur de team-machine tourne en root (il abaisse les droits agent par agent) :
+    // pas de USER à la fin, l'image garde l'utilisateur de son image de base.
+    ...(layer.length ? ["USER root", ...layer, "RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true"] : []),
     `LABEL founderos.tools="${selectionKey(ids)}"`,
     "",
   ].join("\n");

@@ -44,6 +44,32 @@ describe("catalogue des outils", () => {
     assert.deepEqual(got, TOOLS.filter((t) => ["data-sql", "dev-node"].includes(t.id)).map((t) => t.id));
   });
 
+  it("les outils hors de Debian main : leur dépôt est ajouté avant l'installation, le reste après", () => {
+    const at = (layer: string[], re: RegExp) => layer.findIndex((l) => re.test(l));
+    // Trivy : le dépôt d'Aqua, avec gnupg et le dossier des clés prêts avant.
+    const deps = selectionLayer(["defsec-deps"]);
+    assert.ok(at(deps, /apt-get install .*gnupg/) >= 0 && at(deps, /install -m 0755 -d \/etc\/apt\/keyrings/) >= 0);
+    assert.ok(at(deps, /trivy-repo\/deb generic main/) > at(deps, /gnupg/));
+    assert.ok(at(deps, /apt-get install .*'trivy'/) > at(deps, /trivy-repo/), "le dépôt avant le paquet");
+    // kubectl par pkgs.k8s.io, helm en version figée après les paquets ; plus de paquet inexistant.
+    const k8s = selectionLayer(["ops-k8s"]);
+    assert.ok(at(k8s, /pkgs\.k8s\.io/) < at(k8s, /apt-get install .*'kubectl'/));
+    assert.ok(at(k8s, /get\.helm\.sh\/helm-v3\.\d+\.\d+-linux-\$\{ARCH\}/) > at(k8s, /'kubectl'/), "helm après les paquets");
+    assert.doesNotMatch(k8s.join("\n"), /kubernetes-client|'helm'/);
+    // nikto est dans non-free : la section est activée avant l'installation.
+    const web = selectionLayer(["netsec-webaudit"]);
+    assert.ok(at(web, /Components: main non-free/) < at(web, /'nikto'/));
+    // Un outil de Debian main n'ajoute aucune étape.
+    assert.doesNotMatch(selectionLayer(["data-analysis", "docs-ocr"]).join("\n"), /gnupg|keyrings|sources\.list/);
+  });
+
+  it("une machine d'équipe garde l'utilisateur de son image (son superviseur tourne en root)", () => {
+    for (const sel of [["defsec-deps"], ["ops-k8s", "data-analysis"], []]) {
+      const df = selectionDockerfile(sel, "founderos/team-machine:0.3.0");
+      assert.doesNotMatch(df, /^USER (?!root$)/m, `${sel.join(",")} : aucun changement d'utilisateur`);
+    }
+  });
+
   it("l'image d'une sélection part de team-machine et désarme les setuid ; une clé stable", () => {
     const sel = ["defsec-dfir", "defsec-logs"];
     const df = selectionDockerfile(sel, "founderos/team-machine:0.3.0");
