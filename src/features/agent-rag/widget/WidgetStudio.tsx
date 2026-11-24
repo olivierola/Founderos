@@ -30,6 +30,7 @@ import {
   type WidgetConfig, type WidgetModel,
 } from "./widgetConfig";
 import { AvatarChoices, ThinkingChoices, VoiceGlowControls } from "./StudioPresence";
+import { PaSaveBar } from "../ui";
 
 // Studio du widget public : la configuration à gauche, le widget RÉEL à droite.
 //
@@ -48,10 +49,10 @@ export type StudioTab =
 
 function Group({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
-    <section className="border-b border-border/40 py-5 last:border-b-0">
-      <h3 className="text-sm font-semibold">{title}</h3>
-      {hint && <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{hint}</p>}
-      <div className="mt-3 space-y-3">{children}</div>
+    <section className="rounded-2xl border border-border bg-card p-5">
+      <h3 className="text-[15px] font-semibold tracking-tight">{title}</h3>
+      {hint && <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{hint}</p>}
+      <div className="mt-4 space-y-3.5">{children}</div>
     </section>
   );
 }
@@ -60,10 +61,10 @@ function Row({ label, hint, children, wide }: {
   label: string; hint?: string; children: React.ReactNode; wide?: boolean;
 }) {
   return (
-    <div className={cn("grid items-center gap-3", wide ? "grid-cols-1" : "grid-cols-[150px_1fr]")}>
+    <div className={cn("grid items-center gap-x-4 gap-y-2", wide ? "grid-cols-1" : "sm:grid-cols-[170px_minmax(0,1fr)]")}>
       <div className="min-w-0">
-        <label className="block text-sm text-muted-foreground">{label}</label>
-        {hint && <span className="block text-[11px] leading-snug text-muted-foreground/70">{hint}</span>}
+        <label className="block text-[13px] font-medium">{label}</label>
+        {hint && <span className="block text-[12px] leading-snug text-muted-foreground">{hint}</span>}
       </div>
       <div className="min-w-0">{children}</div>
     </div>
@@ -75,7 +76,7 @@ function Pills<T extends string>({ value, options, onChange, className }: {
   value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; className?: string;
 }) {
   return (
-    <div className={cn("inline-flex flex-wrap gap-1 rounded-full bg-muted/50 p-1", className)}>
+    <div className={cn("inline-flex flex-wrap gap-1 rounded-full bg-muted/70 p-1", className)}>
       {options.map((o) => (
         <button
           key={o.value}
@@ -83,7 +84,7 @@ function Pills<T extends string>({ value, options, onChange, className }: {
           onClick={() => onChange(o.value)}
           aria-pressed={value === o.value}
           className={cn(
-            "rounded-full px-3.5 py-1.5 text-xs transition-colors",
+            "rounded-full px-3.5 py-1.5 text-[12px] transition-colors",
             value === o.value
               ? "bg-background font-medium text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground",
@@ -208,15 +209,15 @@ add_action("wp_footer", function () {
   const dark = cfg.theme_mode === "dark" || cfg.theme_mode === "auto";
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,520px)]">
-      <div className="min-w-0">
+    <div className="mx-auto grid w-full max-w-[1480px] gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,540px)]">
+      <div className="min-w-0 space-y-4">
         {tab === "modele" && (
           <>
             <Group
               title="Modèles"
-              hint="Un modèle change la STRUCTURE : où vit le champ de saisie, comment la fenêtre se pose, ce que montre l'écran vide. Vos couleurs, vos textes et votre clé publique restent intacts, on essaie un modèle sans rien perdre."
+              hint="La structure de la fenêtre. Couleurs et textes restent intacts."
             >
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(180px,1fr))]">
                 {WIDGET_MODELS.map((m) => {
                   const active = (cfg.layout ?? "classic") === m.values.layout;
                   return (
@@ -226,21 +227,17 @@ add_action("wp_footer", function () {
                       onClick={() => applyPreset(m.values)}
                       aria-pressed={active}
                       className={cn(
-                        "flex items-center gap-3 rounded-xl border p-2.5 text-left transition-colors",
-                        active
-                          ? "border-primary/60 bg-primary/5"
-                          : "border-border/70 bg-card hover:border-primary/40",
+                        "flex flex-col overflow-hidden rounded-xl border text-left transition-colors",
+                        active ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/50",
                       )}
                     >
                       <ModelThumb kind={m.thumb} />
-                      <span className="min-w-0 flex-1">
+                      <span className="block border-t border-border/70 px-3 py-2.5">
                         <span className="flex items-center gap-1.5">
-                          <span className="truncate text-xs font-medium">{m.label}</span>
-                          {active && <Check className="h-3 w-3 shrink-0 text-primary" />}
+                          <span className="truncate text-[13px] font-medium">{m.label}</span>
+                          {active && <Check weight="bold" className="h-3.5 w-3.5 shrink-0 text-primary" />}
                         </span>
-                        <span className="mt-0.5 block text-[10px] leading-snug text-muted-foreground">
-                          {m.hint}
-                        </span>
+                        <span className="mt-0.5 line-clamp-2 block text-[12px] leading-snug text-muted-foreground">{m.hint}</span>
                       </span>
                     </button>
                   );
@@ -248,7 +245,7 @@ add_action("wp_footer", function () {
               </div>
             </Group>
 
-            <Group title="Structure" hint="Les réglages que porte le modèle. Rien n'est verrouillé : un modèle n'est qu'un point de départ.">
+            <Group title="Structure">
               <Row label="Disposition">
                 <SoftSelect
                   value={cfg.layout}
@@ -345,27 +342,32 @@ add_action("wp_footer", function () {
 
         {tab === "apparence" && (
           <>
-            <Group title="Thèmes" hint="Un point de départ cohérent. Un thème ne touche que la matière, vos textes, vos conditions et votre clé restent intacts.">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {WIDGET_PRESETS.map((p) => (
-                  <button
-                    key={p.key}
-                    type="button"
-                    onClick={() => applyPreset(p.values)}
-                    className="group flex items-center gap-2.5 rounded-xl border border-border/70 bg-card p-2.5 text-left transition-colors hover:border-primary/50"
-                  >
-                    <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border"
-                      style={{ background: p.swatch[0], borderColor: p.swatch[2] }}
+            <Group title="Thèmes" hint="Un point de départ. Seule la matière change, vos textes restent.">
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(150px,1fr))]">
+                {WIDGET_PRESETS.map((p) => {
+                  const active = presetMatches(cfg, p.values);
+                  return (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => applyPreset(p.values)}
+                      aria-pressed={active}
+                      className={cn(
+                        "flex flex-col overflow-hidden rounded-xl border text-left transition-colors",
+                        active ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/50",
+                      )}
                     >
-                      <span className="h-4 w-4 rounded-full" style={{ background: p.swatch[1] }} />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-xs font-medium">{p.label}</span>
-                      <span className="block truncate text-[10px] text-muted-foreground">{p.hint}</span>
-                    </span>
-                  </button>
-                ))}
+                      <MiniWidget values={{ ...WIDGET_DEFAULTS, ...p.values } as WidgetConfig} brand={agent.accent_color} />
+                      <span className="block border-t border-border/70 px-3 py-2">
+                        <span className="flex items-center gap-1.5">
+                          <span className="truncate text-[13px] font-medium">{p.label}</span>
+                          {active && <Check weight="bold" className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                        </span>
+                        <span className="block truncate text-[11px] text-muted-foreground">{p.hint}</span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </Group>
 
@@ -384,7 +386,18 @@ add_action("wp_footer", function () {
             </Group>
 
             <Group title="Accent">
-              <ColorRow label="Accent" hint="Vide = couleur de marque du collaborateur" value={cfg.accent} onChange={(v) => set("accent", v)} />
+              <ColorRow label="Accent" hint="Vide = couleur de marque de l'agent" value={cfg.accent} onChange={(v) => set("accent", v)} />
+              <Row label="Messages du visiteur">
+                <Pills
+                  value={(cfg.user_bubble ?? "accent") as "accent" | "soft" | "ink"}
+                  onChange={(v) => set("user_bubble", v)}
+                  options={[
+                    { value: "accent", label: "Accent" },
+                    { value: "soft", label: "Teinte douce" },
+                    { value: "ink", label: "Encre" },
+                  ]}
+                />
+              </Row>
               <Row label="Texte sur l'accent" hint="Auto calcule le contraste">
                 <Pills
                   value={cfg.accent_primary === "auto" ? "auto" : "custom"}
@@ -575,6 +588,7 @@ add_action("wp_footer", function () {
                   onChange={(v) => set("header_style", v)}
                   options={[
                     { value: "minimal", label: "Sobre" },
+                    { value: "soft", label: "Teinté" },
                     { value: "accent", label: "Accent" },
                     { value: "gradient", label: "Dégradé" },
                   ]}
@@ -817,39 +831,11 @@ add_action("wp_footer", function () {
           </>
         )}
 
-        {/* Save bar — a pill that floats at the BOTTOM of the settings column
-            and only shows up when there is something to save. At the top it
-            parked under the shell's floating tab bars and overlapped them. */}
-        <div className="pointer-events-none sticky bottom-4 z-20 mt-6 flex justify-center">
-          <div
-            className={cn(
-              "flex items-center gap-2 rounded-full border border-border/70 bg-background/90 py-1.5 pl-4 pr-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.25)] backdrop-blur-xl transition-all duration-300",
-              dirty || saved || saving ? "pointer-events-auto translate-y-0 opacity-100" : "translate-y-3 opacity-0",
-            )}
-            aria-hidden={!(dirty || saved || saving)}
-          >
-            {dirty ? (
-              <>
-                <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                  <span className="hidden sm:inline">Modifications non enregistrées</span>
-                  <span className="sm:hidden">Non enregistré</span>
-                </span>
-                <Button variant="ghost" size="sm" className="rounded-md" onClick={() => setCfg(JSON.parse(baseline))}>
-                  Annuler
-                </Button>
-                <Button size="sm" onClick={save} disabled={saving} className="rounded-md">
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                  Enregistrer
-                </Button>
-              </>
-            ) : (
-              <span className="flex items-center gap-2 py-1.5 pr-3 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                <Check className="h-3.5 w-3.5" weight="bold" /> Enregistré, vos visiteurs le voient
-              </span>
-            )}
-          </div>
-        </div>
+        <PaSaveBar
+          dirty={dirty} saving={saving} saved={saved}
+          onSave={() => void save()} onReset={() => setCfg(JSON.parse(baseline))}
+          savedLabel="Enregistré, vos visiteurs le voient"
+        />
       </div>
 
       <WidgetPreview agent={agent} cfg={cfg} />
@@ -1029,7 +1015,7 @@ function WidgetPreview({ agent, cfg }: { agent: Agent; cfg: WidgetConfig }) {
           </span>
           Aperçu en direct
         </div>
-        <div className="flex items-center gap-1 rounded-full border border-border/60 bg-card/80 p-1 shadow-sm backdrop-blur">
+        <div className="flex items-center gap-1 rounded-full border border-border bg-card p-1">
           {([
             ["open", "Conversation"],
             ["thinking", "Réflexion"],
@@ -1059,15 +1045,7 @@ function WidgetPreview({ agent, cfg }: { agent: Agent; cfg: WidgetConfig }) {
 
       {/* Stage: a quiet dotted ground with a soft halo, so the device reads as
           an object placed on a surface rather than a box in a box. */}
-      <div
-        className="relative overflow-hidden rounded-[28px] border border-border/60 p-5"
-        style={{
-          backgroundColor: "hsl(var(--muted) / 0.35)",
-          backgroundImage:
-            "radial-gradient(60% 50% at 50% 0%, hsl(var(--primary) / 0.10), transparent 70%), radial-gradient(hsl(var(--foreground) / 0.07) 1px, transparent 1px)",
-          backgroundSize: "100% 100%, 16px 16px",
-        }}
-      >
+      <div className="relative overflow-hidden rounded-2xl border border-border bg-muted/40 p-5">
         {!mobile ? (
           <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_24px_60px_-12px_rgba(0,0,0,0.35)] ring-1 ring-black/5">
             <div className="flex items-center gap-2 border-b border-border/60 bg-muted/40 px-3.5 py-2.5">
@@ -1123,7 +1101,8 @@ function ModelThumb({ kind }: { kind: WidgetModel["thumb"] }) {
   const line = "absolute rounded-full bg-foreground/20";
 
   return (
-    <span className="relative block h-14 w-[72px] shrink-0 overflow-hidden rounded-lg border border-border/60 bg-muted/40">
+    <span className="flex h-[92px] w-full shrink-0 items-center justify-center bg-muted/50">
+      <span className="relative block h-14 w-[72px] scale-[1.45] overflow-hidden rounded-[5px] bg-background/70 ring-1 ring-border">
       {kind === "spotlight" && <span className="absolute inset-0 bg-foreground/25" />}
 
       {kind === "sidebar" && (
@@ -1179,6 +1158,7 @@ function ModelThumb({ kind }: { kind: WidgetModel["thumb"] }) {
           <span className="absolute inset-x-1 bottom-1 h-3 rounded-[2px] bg-foreground/10 ring-1 ring-foreground/15" />
         </span>
       )}
+      </span>
     </span>
   );
 }
@@ -1199,5 +1179,66 @@ function IconToggle({ active, onClick, title, children }: {
     >
       {children}
     </button>
+  );
+}
+
+/** Un thème correspond à la configuration quand toutes ses valeurs y sont. */
+function presetMatches(cfg: WidgetConfig, values: Partial<WidgetConfig>): boolean {
+  return Object.entries(values).every(([k, v]) => (cfg as Record<string, unknown>)[k] === v);
+}
+
+/**
+ * La vignette d'un thème : une fenêtre de widget dessinée à ses couleurs, ses
+ * rayons, son en-tête et ses bulles. Une forme fidèle, pas l'aperçu réel
+ * (celui-là est à droite) : de quoi choisir d'un coup d'œil.
+ */
+function MiniWidget({ values: v, brand }: { values: WidgetConfig; brand: string | null }) {
+  const dark = v.theme_mode === "dark";
+  const base = dark ? v.dark_base : v.base;
+  const border = dark ? v.dark_border : v.base_border;
+  const ink = dark ? v.dark_primary : v.base_primary;
+  const subtle = dark ? v.dark_subtle : v.base_subtle;
+  const accent = (v.accent as string) || brand || "#7c6fd6";
+  const r = (n: number) => Math.round(Number(n) * 0.55);
+  const head = v.header_style === "accent" ? accent
+    : v.header_style === "gradient" ? `linear-gradient(135deg, ${accent}, color-mix(in srgb, ${accent} 55%, #000))`
+    : v.header_style === "soft" ? `color-mix(in srgb, ${accent} 10%, ${base})` : base;
+  const onHead = v.header_style === "accent" || v.header_style === "gradient";
+  const user = v.user_bubble === "soft" ? { bg: `color-mix(in srgb, ${accent} 16%, ${base})`, fg: ink }
+    : v.user_bubble === "ink" ? { bg: ink, fg: base } : { bg: accent, fg: "#fff" };
+  const font = v.font_family === "serif" ? "ui-serif, Georgia, serif" : v.font_family === "mono" ? "ui-monospace, monospace" : "inherit";
+  return (
+    <span className="relative block h-[118px] w-full overflow-hidden" style={{ background: dark ? "#2a2a2e" : "#ecebe8" }}>
+      <span
+        className="absolute bottom-2 right-2 top-2 flex w-[78%] flex-col overflow-hidden"
+        style={{
+          background: base, border: `1px solid ${border}`, borderRadius: r(v.panel_radius), fontFamily: font,
+          boxShadow: v.shadow === "none" ? "none" : v.shadow === "strong" ? "0 8px 20px rgba(0,0,0,.28)" : "0 4px 12px rgba(0,0,0,.12)",
+        }}
+      >
+        <span className="flex items-center gap-1.5 px-2 py-1.5" style={{ background: head, borderBottom: v.header_style === "minimal" ? `1px solid ${border}` : "none" }}>
+          <span
+            className="h-3 w-3 shrink-0"
+            style={{ background: onHead ? "rgba(255,255,255,.85)" : accent, borderRadius: v.avatar_shape === "circle" ? 999 : v.avatar_shape === "square" ? 2 : 4 }}
+          />
+          <span className="h-1.5 w-10 rounded-full" style={{ background: onHead ? "rgba(255,255,255,.85)" : ink, opacity: onHead ? 1 : 0.8 }} />
+        </span>
+        <span className="flex flex-1 flex-col gap-1 px-2 py-1.5">
+          <span
+            className="h-3.5 w-[62%]"
+            style={{
+              background: v.bot_bubble === "flat" ? "transparent" : `color-mix(in srgb, ${subtle} 18%, ${base})`,
+              borderRadius: r(v.bubble_radius),
+              boxShadow: v.bot_bubble === "flat" ? `inset 0 -2px 0 color-mix(in srgb, ${subtle} 35%, transparent)` : "none",
+            }}
+          />
+          <span className="ml-auto h-3.5 w-[48%]" style={{ background: user.bg, borderRadius: r(v.bubble_radius) }} />
+          <span className="h-3.5 w-[55%]" style={{ background: `color-mix(in srgb, ${subtle} 18%, ${base})`, borderRadius: r(v.bubble_radius) }} />
+        </span>
+        <span className="mx-2 mb-2 flex h-4 items-center justify-end px-0.5" style={{ border: `1px solid ${border}`, borderRadius: r(v.input_radius) }}>
+          <span className="h-2.5 w-2.5" style={{ background: accent, borderRadius: r(v.button_radius) / 2 + 1 }} />
+        </span>
+      </span>
+    </span>
   );
 }

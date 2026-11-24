@@ -49,6 +49,8 @@ import { saveCompanyProfile, upsertObjective } from "@/features/company/model";
 import { createServiceDashboard } from "@/features/service-dashboards/model";
 import { instantiateTemplate } from "@/features/internal-agents/instantiateTemplate";
 import { AGENT_TEMPLATES } from "@/features/internal-agents/agentTemplates";
+import { journeyPending, useJourneyProfile } from "@/features/journey/api";
+import { recommendedTemplates } from "@/features/journey/personalize";
 
 /* ── L'état, repris après un rechargement ───────────────────────────────────
    Le parcours écrit en base à chaque étape, mais il a aussi besoin de savoir OÙ
@@ -105,8 +107,8 @@ function markCoachPending() {
    Le reste du catalogue est à un clic une fois dans l'application. */
 const FIRST_AGENTS = ["ai-secretary", "support-resolver", "exec-briefer", "growth-content"];
 
-function firstAgentTemplates() {
-  const picked = FIRST_AGENTS
+function firstAgentTemplates(preferred?: string[]) {
+  const picked = (preferred?.length ? preferred : FIRST_AGENTS)
     .map((key) => AGENT_TEMPLATES.find((t) => t.key === key))
     .filter((t): t is (typeof AGENT_TEMPLATES)[number] => !!t);
   // Si les identifiants du catalogue ont bougé, on prend les quatre premiers
@@ -130,11 +132,14 @@ export function OnboardingPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const templates = useMemo(firstAgentTemplates, []);
+  // Les agents proposés suivent les réponses du parcours d'arrivée.
+  const { data: journey } = useJourneyProfile();
+  const templates = useMemo(() => firstAgentTemplates(journey ? recommendedTemplates(journey, 4) : undefined), [journey]);
 
   useEffect(() => { writeDraft(draft); }, [draft]);
 
   if (!authLoading && !session) return <Navigate to="/login" replace />;
+  if (!authLoading && journeyPending(journey)) return <Navigate to="/welcome?next=/onboarding" replace />;
 
   /* Un compte qui a DÉJÀ un espace de travail n'est pas un nouvel arrivant : il
      revient (invitation acceptée, second appareil, retour après déconnexion).

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { PaHeader, PaPage } from "../ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -70,11 +71,15 @@ function slaText(due: string | null, status: string): { text: string; late: bool
 
 export function SupportTab({ agent, sub }: { agent: Agent; sub: SupportSubtab }) {
   return (
-    <div className="mx-auto max-w-6xl space-y-5 p-6">
+    <PaPage>
+      <PaHeader
+        title={sub === "queue" ? "Demandes" : sub === "insights" ? "Tendances" : "Intentions et SLA"}
+        sub={sub === "queue" ? "Ce que l'agent confie à l'équipe" : sub === "insights" ? "Sur 30 jours" : "Comment les demandes sont triées et relayées"}
+      />
       {sub === "queue" && <QueuePage agent={agent} />}
       {sub === "insights" && <InsightsPage agent={agent} />}
       {sub === "setup" && <SetupPage agent={agent} />}
-    </div>
+    </PaPage>
   );
 }
 

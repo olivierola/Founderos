@@ -344,7 +344,7 @@ ${context || "(no knowledge indexed yet)"}`;
       ok: true,
       answer,
       conversation_id: convId,
-      sources: chunks.map((c) => ({ similarity: c.similarity, snippet: c.content.slice(0, 160) })),
+      sources: chunks.map((c) => ({ source_id: c.source_id, similarity: c.similarity, snippet: c.content.slice(0, 240) })),
       // Harvested from the MCP tool results and rendered as cards by the widget;
       // the model was told they are already on screen, so it summarises instead
       // of listing them.

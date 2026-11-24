@@ -15,7 +15,7 @@ interface RouterLike {
  * sur <html>, posé selon l'adresse, plutôt qu'un changement de la police par
  * défaut : les règles vivent dans globals.css sous `[data-typo="app"]`.
  */
-const APP_PATHS = /^\/(orgs|app|companion|setup|sso-setup)(\/|$)/;
+const APP_PATHS = /^\/(orgs|app|companion|setup|sso-setup|welcome|staff|onboarding)(\/|$)/;
 
 function apply(pathname: string) {
   const root = document.documentElement;

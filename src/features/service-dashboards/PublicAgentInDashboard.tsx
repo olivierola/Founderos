@@ -4,7 +4,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react";
 import {
   ArrowLeftIcon, ChatCircleIcon, BookOpenIcon, PuzzlePieceIcon, ChartBarIcon, CompassIcon,
-  GearSixIcon, RobotIcon, StorefrontIcon, TrayIcon, type Icon as PhosphorIcon,
+  GearSixIcon, HouseSimpleIcon, RobotIcon, StorefrontIcon, TrayIcon, type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import { useCurrentContext } from "@/hooks/useCurrentContext";
@@ -14,6 +14,8 @@ import {
   PublicAgentTabBody, VALID_PUBLIC_AGENT_TABS, type Agent, type PublicAgentTab,
 } from "@/features/agent-rag/AgentBuilder";
 import { resolveSubtab, subtabsFor } from "@/features/agent-rag/publicAgentSubtabs";
+import { publicAgentAvatarUrl } from "@/features/agent-rag/PublicAgentHome";
+import { AgentIdentity } from "@/components/AgentIdentity";
 
 // A public (customer-facing) agent, configured INSIDE the service dashboard
 // that owns it — the same move internal agents made in 0133. The six builder
@@ -23,6 +25,7 @@ import { resolveSubtab, subtabsFor } from "@/features/agent-rag/publicAgentSubta
 // already taken by "public" and the agent id.
 
 const TABS: { key: PublicAgentTab; label: string; icon: PhosphorIcon }[] = [
+  { key: "home", label: "Accueil", icon: HouseSimpleIcon },
   { key: "playground", label: "Playground", icon: ChatCircleIcon },
   { key: "knowledge", label: "Knowledge", icon: BookOpenIcon },
   { key: "widget", label: "Widget", icon: PuzzlePieceIcon },
@@ -40,8 +43,8 @@ export function PublicAgentInDashboard({ dashboardId, agentId }: { dashboardId: 
   const [params, setParams] = useSearchParams();
   const sbase = `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`;
 
-  const rawTab = params.get("t") || "playground";
-  const tab = (VALID_PUBLIC_AGENT_TABS.includes(rawTab as PublicAgentTab) ? rawTab : "playground") as PublicAgentTab;
+  const rawTab = params.get("t") || "home";
+  const tab = (VALID_PUBLIC_AGENT_TABS.includes(rawTab as PublicAgentTab) ? rawTab : "home") as PublicAgentTab;
   // Seconde barre : les tabs qui ont des sous-onglets les affichent ici, sous
   // la première, au lieu de dessiner chacun sa propre bande dans le contenu.
   const subs = subtabsFor(tab);
@@ -81,7 +84,6 @@ export function PublicAgentInDashboard({ dashboardId, agentId }: { dashboardId: 
     );
   }
 
-  const accent = agent.accent_color || "#001BB7";
   // Onboarding is a feature you switch on in Settings — the tab only exists
   // once it is on, so the strip never offers an empty room. E-commerce is not
   // gated the same way: connecting the store IS what that tab is for, so hiding
@@ -101,9 +103,7 @@ export function PublicAgentInDashboard({ dashboardId, agentId }: { dashboardId: 
           >
             <ArrowLeftIcon className="h-3.5 w-3.5" />
           </button>
-          <span className="flex h-5 w-5 items-center justify-center rounded-full" style={{ background: `${accent}26` }}>
-            <RobotIcon weight="duotone" className="h-3.5 w-3.5" style={{ color: accent }} />
-          </span>
+          <AgentIdentity url={publicAgentAvatarUrl(agent)} seed={agent.name} size={20} rounded="rounded-full" interactive={false} />
           <span className="max-w-[160px] truncate text-xs font-semibold leading-tight">{agent.name}</span>
           <span
             className={cn("h-1.5 w-1.5 rounded-full", agent.enabled ? "bg-emerald-500" : "bg-muted-foreground/40")}
@@ -164,6 +164,12 @@ export function PublicAgentInDashboard({ dashboardId, agentId }: { dashboardId: 
         <PublicAgentTabBody
           agent={agent} tab={tab} sub={sub}
           workspaceId={workspaceId} projectId={projectId}
+          onOpen={(t, s) => setParams((p) => {
+            const n = new URLSearchParams(p);
+            n.set("t", t);
+            if (s) n.set("s", s); else n.delete("s");
+            return n;
+          })}
         />
       </div>
     </div>

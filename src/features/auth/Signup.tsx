@@ -20,7 +20,7 @@ export function SignupPage() {
   const { data: sso } = useQuery({ queryKey: ["sso-login-options"], queryFn: fetchLoginOptions, staleTime: 60_000 });
 
   if (!authLoading && session) {
-    return <Navigate to="/onboarding" replace />;
+    return <Navigate to="/welcome?next=/onboarding" replace />;
   }
   // Accounts of an SSO-only organisation are created by its identity provider,
   // on first sign-in.
@@ -60,7 +60,7 @@ export function SignupPage() {
       return;
     }
     if (data.session) {
-      navigate("/onboarding", { replace: true });
+      navigate("/welcome?next=/onboarding", { replace: true });
     } else {
       setInfo("Account created. Check your inbox to confirm your email, then sign in.");
     }

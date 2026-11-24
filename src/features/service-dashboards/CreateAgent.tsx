@@ -18,6 +18,8 @@ import { cn } from "@/lib/utils";
 import { PAGE_PAD, PAGE_SUB, PAGE_TITLE } from "@/components/PageHeader";
 import { AVATAR_OPTIONS, AvatarPicker } from "@/features/internal-agents/AvatarPicker";
 import { AGENT_TEMPLATES, type AgentTemplate } from "@/features/internal-agents/agentTemplates";
+import { useJourneyProfile } from "@/features/journey/api";
+import { recommendedTemplates } from "@/features/journey/personalize";
 import { diagnoseAgentInsertError } from "@/features/internal-agents/instantiateTemplate";
 import { CONNECTOR_ACTION_GROUPS, connectorActionProvider } from "@/features/internal-agents/connectorActionProviders";
 import { applyAgentDefaults, fetchServiceDashboard, DEFAULT_AGENT_DEFAULTS } from "./model";
@@ -68,7 +70,9 @@ export function CreateAgentPage({ dashboardId, workspaceId, projectId }: {
   const base = `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`;
   // ?type=public lands straight on the public form — that's how the roster's
   // "Collaborateur public" entry gets here.
-  const [mode, setMode] = useState<CreateMode>(params.get("type") === "public" ? "public" : "custom");
+  const [mode, setMode] = useState<CreateMode>(
+    params.get("type") === "public" ? "public" : params.get("type") === "templates" ? "templates" : "custom",
+  );
 
   const MODES: { key: CreateMode; label: string; icon?: typeof SquaresFourIcon }[] = [
     { key: "custom", label: "Build Your Own" },
@@ -769,15 +773,20 @@ function TemplateGallery({ dashboardId, workspaceId, projectId, base }: {
   const { data: toolkits } = useComposioToolkits();
   const { data: connStatus } = useConnectorStatus(workspaceId, projectId);
 
+  // Les modèles recommandés par le parcours d'arrivée passent en tête.
+  const { data: journey } = useJourneyProfile();
+  const recommended = useMemo(() => (journey ? recommendedTemplates(journey, 4) : []), [journey]);
+
   const list = useMemo(() => {
     const term = q.trim().toLowerCase();
     const cats = TEMPLATE_TABS.find((t) => t.key === tab)?.match;
+    const rank = (k: string) => { const i = recommended.indexOf(k); return i < 0 ? 99 : i; };
     return AGENT_TEMPLATES.filter((t) => {
       if (cats && !cats.includes(t.category)) return false;
       if (!term) return true;
       return t.name.toLowerCase().includes(term) || t.tagline.toLowerCase().includes(term);
-    });
-  }, [q, tab]);
+    }).sort((x, y) => rank(x.key) - rank(y.key));
+  }, [q, tab, recommended]);
 
   // Creation itself now happens in the config panel, once the agent has been
   // named, instructed, given its skills and had its apps connected.
@@ -824,6 +833,7 @@ function TemplateGallery({ dashboardId, workspaceId, projectId, base }: {
               tools={t.tools.length}
               extras={t.skillSlugs?.length ?? 0}
               badges={[
+                ...(recommended.includes(t.key) ? [{ label: "pour vous", tone: "key" as const, title: "Recommandé d'après vos réponses" }] : []),
                 { label: t.category, tone: "auth", title: "Catégorie" },
                 ...(t.needsMachine ? [{ label: "machine", tone: "key" as const, title: "A besoin d'une machine d'équipe pour travailler" }] : []),
               ]}

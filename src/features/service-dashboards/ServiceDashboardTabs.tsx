@@ -61,6 +61,8 @@ import { KnowledgeGraph } from "./KnowledgeGraph";
 import { CatalogCard, type CatalogStatus } from "./CatalogCard";
 import { useCollaboratorInbox, type InboxItem } from "./CollaboratorInbox";
 import { GetStartedCard } from "./GetStarted";
+import { useFirstName, useJourneyProfile } from "@/features/journey/api";
+import { homeSuggestions } from "@/features/journey/personalize";
 import {
   useComposioToolkits, useConnectorStatus, toolSlugsFromRows, resolveNeeds,
 } from "./useToolkits";
@@ -1779,8 +1781,11 @@ export function WorkspaceMemoryTab({ workspaceId, dashboardId, projectId, view =
 export function HomeTab({ dashboardId, dashboardName, workspaceId, projectId }: {
   dashboardId: string; dashboardName: string; workspaceId: string; projectId: string;
 }) {
-  const { user } = useAuth();
-  const firstName = ((user?.user_metadata?.name as string | undefined) || user?.email?.split("@")[0] || "there").split(" ")[0];
+  const firstName = useFirstName() || "vous";
+  const { data: journey } = useJourneyProfile();
+  const { workspaceSlug, projectSlug } = useParams();
+  const navigate = useNavigate();
+  const suggestions = homeSuggestions(journey, `/app/${workspaceSlug}/${projectSlug}/service/${dashboardId}`);
   const { data: agents } = useDashboardAgents(dashboardId);
 
   return (
@@ -1806,6 +1811,30 @@ export function HomeTab({ dashboardId, dashboardName, workspaceId, projectId }: 
         {/* The entry points, as steps: create an agent, plug your apps in,
             open a room, schedule the recurring work. Each one is ticked by
             real data, and the card leaves once they are all done. */}
+        {/* Ce que la personne a dit vouloir faire en premier (parcours d'arrivée). */}
+        {suggestions.length > 0 && (
+          <div className="mt-9">
+            <div className="mb-2.5 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Pour vous</div>
+            <div className="grid gap-2.5 sm:grid-cols-3">
+              {suggestions.map((sg) => (
+                <button
+                  key={sg.key}
+                  onClick={() => navigate(sg.href)}
+                  className="group flex items-start gap-3 rounded-2xl border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <sg.icon weight="duotone" className="h-[18px] w-[18px]" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[14px] font-medium leading-snug">{sg.label}</span>
+                    <span className="mt-0.5 block text-[12px] leading-snug text-muted-foreground">{sg.sub}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <GetStartedCard dashboardId={dashboardId} className="mt-9" />
       </div>
     </div>

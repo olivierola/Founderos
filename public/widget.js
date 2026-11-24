@@ -82,6 +82,7 @@
     layout: "classic",            // classic | detached | sidebar | spotlight | dock
     backdrop: false,              // voile sur la page derrière la fenêtre
     bot_bubble: "bubble",         // bubble | flat — bulle ou texte posé
+    user_bubble: "accent",        // accent | soft | ink — matière des messages du visiteur
     close_icon: "cross",          // cross | chevron
     voice_input: false,           // dictée (Web Speech API), bouton masqué si non supportée
     voice_glow: true,             // lueur voice-glow sur le champ (seulement si voice_input)
@@ -129,7 +130,7 @@
     font_family_custom: "",
 
     /* Fenêtre */
-    header_style: "minimal",      // minimal | accent | gradient
+    header_style: "minimal",      // minimal | soft | accent | gradient
     text_subtitle: "",
     status_dot: true,
     avatar_type: "bot",           // bot (avatar animé) | live (orbe) | orb (pastille) | image
@@ -890,8 +891,23 @@
   background: linear-gradient(180deg, color-mix(in srgb, var(--fosw-accent) 86%, #ffffff), var(--fosw-accent));
   box-shadow: 0 1px 2px rgba(0,0,0,0.08);
 }
-.fosw-header:not(.fosw-head-accent):not(.fosw-head-gradient) {
+.fosw-header:not(.fosw-head-accent):not(.fosw-head-gradient):not(.fosw-head-soft) {
   border-bottom-color: color-mix(in srgb, var(--fosw-border) 70%, transparent);
+}
+/* En-tête teinté : l'accent à 9 %, sans filet, pour une marque présente sans
+   bandeau plein. */
+.fosw-head-soft {
+  background: color-mix(in srgb, var(--fosw-accent) 9%, transparent);
+  border-bottom-color: transparent;
+}
+/* Messages du visiteur : l'accent plein (défaut), une teinte douce de
+   l'accent, ou l'encre du thème. */
+.fosw-user-soft .fosw-msg-user {
+  background: color-mix(in srgb, var(--fosw-accent) 14%, var(--fosw-base));
+  color: var(--fosw-text); box-shadow: none;
+}
+.fosw-user-ink .fosw-msg-user {
+  background: var(--fosw-text); color: var(--fosw-base); box-shadow: none;
 }
 .fosw-title { font-size: 15px; }
 
@@ -1509,7 +1525,7 @@
     var c = state.cfg;
     var headStyle = c.header_style === "accent" ? " fosw-head-accent"
       : c.header_style === "gradient" ? " fosw-head-gradient" : "";
-    var header = el("div", "fosw-header" + headStyle);
+    var header = el("div", "fosw-header" + headStyle + (c.header_style === "soft" ? " fosw-head-soft" : ""));
     header.appendChild(avatarNode(34, !!headStyle));
 
     var htext = el("div", "fosw-headtext");
@@ -2241,7 +2257,8 @@
     var mode = LAYOUTS[layout].composer;
     var p = el("div", "fosw-panel fosw-lay-" + layout + " " + placementClass("fosw-panel-pos-"));
 
-    var win = el("div", "fosw-win" + (c.bot_bubble === "flat" ? " fosw-flat" : ""));
+    var win = el("div", "fosw-win" + (c.bot_bubble === "flat" ? " fosw-flat" : "")
+      + (c.user_bubble === "soft" ? " fosw-user-soft" : c.user_bubble === "ink" ? " fosw-user-ink" : ""));
     win.setAttribute("role", "dialog");
     win.setAttribute("aria-label", agentName());
     dom.win = win;

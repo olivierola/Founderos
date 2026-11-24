@@ -24,6 +24,7 @@ import {
   type AgentAnalytics as Data,
 } from "./useAgentAnalytics";
 import { cn } from "@/lib/utils";
+import { PaHeader, PaPage, PaSegmented } from "../ui";
 
 // Onglet Analytics d'un agent public.
 //
@@ -48,21 +49,24 @@ export function AgentAnalytics({ agentId, agentName, page = "performance" }: {
   const [days, setDays] = useState(30);
   const { data, isLoading, error } = useAgentAnalytics(agentId, days);
 
+  const TITLES: Record<Page, string> = {
+    performance: "Performance", audience: "Audience", tools: "Outils",
+    llm: "Modèles et coûts", knowledge: "Base de connaissances",
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        <div className="flex items-center gap-0.5 rounded-xl border border-border bg-muted/40 p-0.5">
-          {RANGES.map((r) => (
-            <button key={r.days} onClick={() => setDays(r.days)} aria-pressed={days === r.days}
-              className={cn(
-                "rounded-lg px-2.5 py-1 text-xs transition-colors",
-                days === r.days ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-              )}>
-              {r.label}
-            </button>
-          ))}
-        </div>
-      </div>
+    <PaPage>
+      <PaHeader
+        title={TITLES[page]}
+        sub={`${agentName}, sur ${days} jours`}
+        actions={
+          <PaSegmented
+            value={String(days)}
+            onChange={(v) => setDays(Number(v))}
+            options={RANGES.map((r) => ({ value: String(r.days), label: r.label }))}
+          />
+        }
+      />
 
       {isLoading && <EmptyState icon={Loader2} title="Chargement des statistiques…" />}
       {error && (
@@ -78,7 +82,7 @@ export function AgentAnalytics({ agentId, agentName, page = "performance" }: {
       {data && page === "tools" && <ToolsPage data={data} />}
       {data && page === "llm" && <LlmPage data={data} />}
       {data && page === "knowledge" && <KnowledgePage data={data} />}
-    </div>
+    </PaPage>
   );
 }
 

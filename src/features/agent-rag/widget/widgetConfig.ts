@@ -24,6 +24,7 @@ export const WIDGET_DEFAULTS = {
   layout: "classic" as "classic" | "detached" | "hero" | "sidebar" | "spotlight" | "dock",
   backdrop: false,
   bot_bubble: "bubble" as "bubble" | "flat",
+  user_bubble: "accent" as "accent" | "soft" | "ink",
   close_icon: "cross" as "cross" | "chevron",
   voice_input: false,
   // Lueur voice-glow sur le champ : respire au repos, suit la voix, balaie
@@ -71,7 +72,7 @@ export const WIDGET_DEFAULTS = {
   font_family_custom: "",
 
   // Fenêtre
-  header_style: "minimal" as "minimal" | "accent" | "gradient",
+  header_style: "minimal" as "minimal" | "soft" | "accent" | "gradient",
   text_subtitle: "",
   status_dot: true,
   avatar_type: "bot" as "bot" | "live" | "orb" | "image",
@@ -138,11 +139,73 @@ export interface WidgetPreset {
 
 export const WIDGET_PRESETS: WidgetPreset[] = [
   {
+    key: "ardoise",
+    label: "Ardoise",
+    hint: "Gris charbon, violet adouci, sobre",
+    swatch: ["#17171a", "#8b80d9", "#2a2a2f"],
+    values: {
+      theme_mode: "dark", panel_style: "solid", shadow: "strong", density: "comfortable",
+      dark_base: "#17171a", dark_border: "#2a2a2f", dark_subtle: "#a1a1aa", dark_primary: "#f4f4f5",
+      accent: "#8b80d9", panel_radius: 20, bubble_radius: 16, input_radius: 14, button_radius: 14,
+      header_style: "minimal", user_bubble: "soft", avatar_shape: "rounded", font_family: "system",
+    },
+  },
+  {
+    key: "lavande",
+    label: "Lavande",
+    hint: "Clair, en-tête teinté, bulles douces",
+    swatch: ["#fcfbff", "#7c6fd6", "#e9e6f8"],
+    values: {
+      theme_mode: "light", panel_style: "solid", shadow: "soft", density: "comfortable",
+      base: "#fcfbff", base_border: "#e9e6f8", base_subtle: "#6b6880", base_primary: "#1c1a29",
+      accent: "#7c6fd6", panel_radius: 22, bubble_radius: 18, input_radius: 16, button_radius: 16,
+      header_style: "soft", user_bubble: "soft", avatar_shape: "circle", font_family: "rounded",
+    },
+  },
+  {
+    key: "papier",
+    label: "Papier",
+    hint: "Éditorial, serif, encre noire",
+    swatch: ["#faf8f3", "#1c1917", "#e7e2d6"],
+    values: {
+      theme_mode: "light", panel_style: "solid", shadow: "soft", density: "comfortable",
+      base: "#faf8f3", base_border: "#e7e2d6", base_subtle: "#78716c", base_primary: "#1c1917",
+      accent: "#1c1917", panel_radius: 14, bubble_radius: 12, input_radius: 10, button_radius: 10,
+      header_style: "minimal", user_bubble: "ink", avatar_shape: "square", font_family: "serif",
+    },
+  },
+  {
+    key: "menthe",
+    label: "Menthe",
+    hint: "Frais, en-tête teinté, rond",
+    swatch: ["#f7fcfa", "#0f9f76", "#d5efe5"],
+    values: {
+      theme_mode: "light", panel_style: "solid", shadow: "soft", density: "comfortable",
+      base: "#f7fcfa", base_border: "#d5efe5", base_subtle: "#5b6b65", base_primary: "#10201a",
+      accent: "#0f9f76", panel_radius: 24, bubble_radius: 20, input_radius: 18, button_radius: 18,
+      header_style: "soft", user_bubble: "accent", avatar_shape: "circle", font_family: "rounded",
+    },
+  },
+  {
+    key: "minuit",
+    label: "Minuit",
+    hint: "Bleu nuit, en-tête plein, contrasté",
+    swatch: ["#0d1120", "#4b5ce0", "#1e2540"],
+    values: {
+      theme_mode: "dark", panel_style: "solid", shadow: "strong", density: "comfortable",
+      dark_base: "#0d1120", dark_border: "#1e2540", dark_subtle: "#94a0c2", dark_primary: "#eef1fb",
+      accent: "#4b5ce0", panel_radius: 18, bubble_radius: 16, input_radius: 12, button_radius: 12,
+      header_style: "accent", user_bubble: "accent", avatar_shape: "rounded", font_family: "system",
+    },
+  },
+  {
     key: "epure",
     label: "Épuré",
     hint: "Blanc, bords doux, ombre légère",
     swatch: ["#ffffff", "#111827", "#e5e7eb"],
     values: {
+      accent: "",
+      user_bubble: "accent",
       theme_mode: "light", panel_style: "solid", shadow: "soft", density: "comfortable",
       base: "#ffffff", base_border: "#e5e7eb", base_subtle: "#6b7280", base_primary: "#18181b",
       panel_radius: 18, bubble_radius: 16, input_radius: 12, button_radius: 12,
@@ -155,6 +218,8 @@ export const WIDGET_PRESETS: WidgetPreset[] = [
     hint: "Sombre, verre dépoli, ombre marquée",
     swatch: ["#101013", "#6366f1", "#2a2a30"],
     values: {
+      accent: "",
+      user_bubble: "accent",
       theme_mode: "dark", panel_style: "glass", shadow: "strong", density: "comfortable",
       dark_base: "#101013", dark_border: "#2a2a30", dark_subtle: "#a1a1aa", dark_primary: "#f4f4f5",
       panel_radius: 20, bubble_radius: 16, input_radius: 14, button_radius: 14,
@@ -167,6 +232,8 @@ export const WIDGET_PRESETS: WidgetPreset[] = [
     hint: "Translucide, en-tête dégradé, grands rayons",
     swatch: ["#f8fafc", "#0ea5e9", "#dbeafe"],
     values: {
+      accent: "",
+      user_bubble: "accent",
       theme_mode: "auto", panel_style: "glass", shadow: "soft", density: "comfortable",
       base: "#f8fafc", base_border: "#e2e8f0", base_subtle: "#64748b", base_primary: "#0f172a",
       panel_radius: 24, bubble_radius: 20, input_radius: 16, button_radius: 16,
@@ -179,6 +246,8 @@ export const WIDGET_PRESETS: WidgetPreset[] = [
     hint: "Angles nets, en-tête plein, dense",
     swatch: ["#ffffff", "#1d4ed8", "#cbd5e1"],
     values: {
+      accent: "",
+      user_bubble: "accent",
       theme_mode: "light", panel_style: "solid", shadow: "soft", density: "compact",
       base: "#ffffff", base_border: "#cbd5e1", base_subtle: "#64748b", base_primary: "#0f172a",
       panel_radius: 8, bubble_radius: 8, input_radius: 6, button_radius: 6,
@@ -191,6 +260,8 @@ export const WIDGET_PRESETS: WidgetPreset[] = [
     hint: "Rond, coloré, lanceur qui appelle",
     swatch: ["#fffbf5", "#f97316", "#fed7aa"],
     values: {
+      accent: "",
+      user_bubble: "accent",
       theme_mode: "light", panel_style: "solid", shadow: "strong", density: "comfortable",
       base: "#fffbf5", base_border: "#fed7aa", base_subtle: "#a16207", base_primary: "#1c1917",
       panel_radius: 26, bubble_radius: 22, input_radius: 20, button_radius: 20,
@@ -204,6 +275,7 @@ export const WIDGET_PRESETS: WidgetPreset[] = [
     hint: "Sombre, orbe vivante, lueur monochrome",
     swatch: ["#0c0c0e", "#e4e4e7", "#27272a"],
     values: {
+      user_bubble: "accent",
       theme_mode: "dark", panel_style: "glass", shadow: "strong", density: "comfortable",
       dark_base: "#0c0c0e", dark_border: "#27272a", dark_subtle: "#a1a1aa", dark_primary: "#fafafa",
       accent: "#e4e4e7",
@@ -218,6 +290,8 @@ export const WIDGET_PRESETS: WidgetPreset[] = [
     hint: "Clair nacré, orbe vivante, lueur océan",
     swatch: ["#fbfbfe", "#6366f1", "#e0e7ff"],
     values: {
+      accent: "",
+      user_bubble: "accent",
       theme_mode: "auto", panel_style: "glass", shadow: "soft", density: "comfortable",
       base: "#fbfbfe", base_border: "#e0e7ff", base_subtle: "#64748b", base_primary: "#0f172a",
       panel_radius: 24, bubble_radius: 20, input_radius: 18, button_radius: 18,

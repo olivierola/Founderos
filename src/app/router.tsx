@@ -11,6 +11,8 @@ import { PlaneLanding } from "./PlaneLanding";
 import { LoginPage } from "@/features/auth/Login";
 import { SignupPage } from "@/features/auth/Signup";
 import { OnboardingPage as AuthOnboardingPage } from "@/features/auth/Onboarding";
+import { WelcomeJourneyPage } from "@/features/journey/WelcomeJourney";
+import { StaffUsersPage } from "@/features/journey/StaffUsers";
 import { AcceptInvitePage } from "@/features/auth/AcceptInvite";
 import { OrganisationsPage } from "@/features/orgs/Organisations";
 import { ProjectsPage } from "@/features/orgs/Projects";
@@ -333,6 +335,17 @@ export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
   { path: "/signup", element: <SignupPage /> },
   { path: "/onboarding", element: <AuthOnboardingPage /> },
+  // Le parcours d'arrivée d'une personne (0319) : profil, métier, attentes.
+  { path: "/welcome", element: <WelcomeJourneyPage /> },
+  // La vue de l'équipe plateforme sur ses utilisateurs (réservée à platform_staff).
+  {
+    path: "/staff/users",
+    element: (
+      <ProtectedRoute>
+        <StaffUsersPage />
+      </ProtectedRoute>
+    ),
+  },
   { path: "/accept-invite", element: <AcceptInvitePage /> },
   // Entrée en paiement depuis la grille publique. Volontairement hors
   // ProtectedRoute : la page doit voir le visiteur anonyme pour mémoriser

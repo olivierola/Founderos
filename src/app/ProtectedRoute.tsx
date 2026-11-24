@@ -2,6 +2,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { Skeleton, PageSkeleton } from "@/components/ui/skeleton";
+import { journeyPending, useJourneyProfile } from "@/features/journey/api";
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -29,6 +30,7 @@ function AppLoadingSkeleton() {
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { session, loading } = useAuth();
   const location = useLocation();
+  const journey = useJourneyProfile();
 
   if (loading) return <AppLoadingSkeleton />;
 
@@ -42,6 +44,18 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   // Send those to the org picker so the user re-selects a real project.
   if (/^\/app\/default\/default(\/|$)/.test(location.pathname)) {
     return <Navigate to="/orgs" replace />;
+  }
+
+  // Première connexion : le parcours d'arrivée passe avant tout le reste, une
+  // seule fois (terminé ou passé, il ne revient plus). Les pages de mise en
+  // route d'une installation et l'équipe plateforme n'y sont pas soumises.
+  const exempt = /^\/(setup|sso-setup|billing-success|staff)(\/|$)/.test(location.pathname);
+  if (!exempt) {
+    if (journey.isLoading) return <AppLoadingSkeleton />;
+    if (journeyPending(journey.data)) {
+      const next = `${location.pathname}${location.search}`;
+      return <Navigate to={`/welcome?next=${encodeURIComponent(next)}`} replace />;
+    }
   }
 
   return <>{children}</>;
